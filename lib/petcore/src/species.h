@@ -4,6 +4,8 @@
 #pragma once
 #include <cstdint>
 
+#include "tuning.h"
+
 namespace petcore {
 
 enum class Rarity : uint8_t { Common, Uncommon, Rare, Legendary, Count };
@@ -18,20 +20,9 @@ struct SpeciesInfo {
   uint32_t accent;  // ear insides, horns, tufts
 };
 
-// Egg time settings. Longer eggs mean longer sessions and rarer pets: hatch
-// odds per rarity tier in percent, split evenly within a tier.
-struct EggKind {
-  uint16_t minutes;
-  uint8_t weight[static_cast<int>(Rarity::Count)];
-};
-constexpr EggKind kEggs[] = {
-    {15, {75, 20, 5, 0}},
-    {30, {55, 28, 14, 3}},
-    {60, {40, 32, 22, 6}},
-    {90, {25, 33, 30, 12}},
-};
+// Egg sizes and their odds are kEggs in tuning.h.
 constexpr int kEggCount = sizeof(kEggs) / sizeof(kEggs[0]);
-constexpr uint16_t kDefaultEggMinutes = 30;
+static_assert(sizeof(kEggs[0].weight) == static_cast<int>(Rarity::Count), "one weight per rarity tier");
 
 // The kind for a time setting (unknown or 0 = the default egg's odds).
 const EggKind& egg_kind(uint16_t minutes);

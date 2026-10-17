@@ -1,14 +1,14 @@
 # Game design
 
-Everyone docks their phone in the box. A shared pet lives on the screen. It grows while every phone stays put, and it suffers if anyone picks theirs up.
+Everyone docks their phone in the box. A shared pet lives on the screen. It grows while every phone stays put, and it suffers if anyone picks theirs up. It's a team game: every session needs every player, and the team wins or loses together.
 
 ## Session flow
 
 | State | What happens | Leaves when |
 |-------|--------------|-------------|
-| **Idle** | Lobby. Slots show *docked* as phones go in. A fresh egg shows the egg picker (see [Eggs](#eggs)). | **Start** pressed, or all 4 slots docked for 5 s |
-| **Arming** | 10 s countdown. Late players can still dock and join. | Countdown ends → Running. Any armed phone lifted, or **Cancel** → Idle (no penalty) |
-| **Running** | Pet earns XP every minute. Newly docked phones join mid-session. | A lift, **Finish**, or everyone leaves via emergency pass |
+| **Idle** | Lobby. Slots show *docked* as phones go in. A fresh egg shows the egg picker (see [Eggs](#eggs)). | Every player's phone docked for 1.5 s (there is no Start button). Not at night |
+| **Arming** | 10 s countdown. | Countdown ends → Running. Any phone lifted, or **Cancel** → Idle (no penalty) |
+| **Running** | Pet earns XP every minute. | A lift, **Finish**, bedtime, or everyone leaves via emergency pass |
 | **Result** | Success / Stopped / BUSTED! / R.I.P. screen. The culprit's slot is shown in red. | **OK**, or 2 min timeout |
 
 ### Rules while running
@@ -17,6 +17,7 @@ Everyone docks their phone in the box. A shared pet lives on the screen. It grow
 - **Target reached:** once the goal time has passed, picking up a phone ends the session as a success.
 - **Finish button:** after at least 10 min (or once the target is reached) it says *Finish* and counts as a success. Before that it says *Stop early*: no reward, no penalty.
 - **Emergency pass:** once per session, tap *Emergency pass*. The next phone lifted within 30 s leaves without penalty and the others carry on. If nobody lifts, you keep the pass.
+- **Bedtime:** at night the pet sleeps (see [Night](#night)). A session still running at bedtime ends as if *Finish* was pressed.
 - **Pulling the plug** mid-session counts as a break. The active session is saved to flash, so it is detected on the next boot (the culprit shows as "Someone").
 
 ## Pet
@@ -31,13 +32,7 @@ Everyone docks their phone in the box. A shared pet lives on the screen. It grow
 
 ### XP
 
-Per minute, by the number of phones locked in:
-
-| Players | 1 | 2 | 3 | 4 |
-|---------|---|---|---|---|
-| XP/min | 1 | 2 | 4 | 6 |
-
-A successful session adds a **20 % completion bonus**, plus XP equal to the target minutes if a target was reached.
+**2 XP per minute**, whatever the size of the team: the challenge is keeping everyone off their phones, not how many there are. A successful session adds a **20 % completion bonus**, plus XP equal to the target minutes if a target was reached.
 
 ### Extra-life challenge
 
@@ -45,14 +40,24 @@ Reaching the target completes the session: the box shows **GOAL COMPLETE!** and 
 
 ### Evolution
 
-| Stage | XP | ~Time with 4 players |
-|-------|----|----------------------|
+| Stage | XP | ~Sessions with a 30-min egg |
+|-------|----|-----------------------------|
 | Egg | 0 | — |
-| Baby | 30 | 5 min |
-| Child | 150 | 25 min |
-| Teen | 500 | 1.4 h |
-| Adult | 1500 | 4 h |
-| Elder | 4000 | 11 h |
+| Baby | 30 | the first one |
+| Child | 150 | 2 |
+| Teen | 500 | 5 |
+| Adult | 1500 | 15 |
+| Elder | 4000 | 40 |
+
+A successful 30-min session earns about 100 XP (60 for the minutes, 12 completion bonus, 30 for reaching the goal).
+
+### Night
+
+From **22:00 to 07:00** local time the pet sleeps: it closes its eyes, the box shows *Zz*, and no session can start. A session still running at 22:00 ends as if *Finish* was pressed. Night needs the box to know the time (Wi-Fi or the app); the hours are in `tuning.h`.
+
+### Daily minimum
+
+The team has a daily minimum of docked minutes (30 by default, set on the box). Since every session includes everyone, the team meets it or misses it together: a missed day costs the pet **one** heart and puts *the team* on the wall of shame. Only a player who left a session on the emergency pass can miss it alone; then that player is named.
 
 ### Eggs
 
@@ -86,4 +91,4 @@ When hearts reach 0 the pet dies and a tombstone is shown. After **OK**, a new e
 
 ## Tuning
 
-All numbers live in `lib/petcore/src/pet.h` (pet tuning), `lib/petcore/src/species.h` (egg sizes and hatch odds), `species.cpp` (species list and colours) and `Config` in `lib/petcore/src/game.h` (timings). Play-test changes in the simulator (`make sim && ./build/petsim`) with time warp before flashing.
+Every number lives in [`lib/petcore/src/tuning.h`](../lib/petcore/src/tuning.h); the species list and colours are in `species.cpp`. Play-test changes in the simulator (`make sim && ./build/petsim`) with time warp before flashing.

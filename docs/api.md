@@ -27,6 +27,8 @@ Everything the home and group screens need, in one call.
   "api": 1,
   "now": 1767300000,
   "clock": true,
+  "night": false,
+  "night_hours": [22, 7],
   "day_ends_in_s": 33120,
   "settings": {
     "players": 2,
@@ -119,7 +121,8 @@ Everything the home and group screens need, in one call.
 |-------|--------|
 | `clock` | `false` until the box knows the time (NTP or `POST /api/time`). While false, daily rules are paused and `day_ends_in_s` is `null`. |
 | `pet.stage` | `Egg`, `Baby`, `Child`, `Teen`, `Adult`, `Elder` |
-| `pet.mood` | `Happy`, `Content`, `Sad`, `Crying`, `Dead` |
+| `pet.mood` | `Happy`, `Content`, `Sad`, `Crying`, `Dead`, `Sleeping` (at night) |
+| `night` | `true` during the night hours `night_hours` (local `[start, end]`): the pet sleeps and no session can start. Always `false` while `clock` is `false`. |
 | `pet.egg_minutes` | The egg's time setting (15, 30, 60 or 90): the goal of every session for this pet, also `session.target_min`. `egg_locked` is `false` while it can still be changed (a fresh egg before its first session). `rare_chance` is the percent chance this egg hatches Rare or Legendary. |
 | `pet.species` | The animal the egg hatched into, or `null` while it's still an egg. `species_index` is its index in `GET /api/collection`; `rarity` is `Common`, `Uncommon`, `Rare` or `Legendary`. |
 | `pet.hearts` | 0–5. Above `max_hearts` (3) are bonus lives. |
@@ -163,7 +166,7 @@ Recent events for the app's feed and toasts. The box keeps the last 64 in memory
 }
 ```
 
-`value` is a number, except for `SessionEnded`, where it's the result kind as text (`"Success"`, `"Aborted"`, `"Broken"` or `"Died"`). `type` is one of: `ArmingStarted`, `ArmingCancelled`, `SessionStarted`, `PlayerJoined`, `Evolved`, `TargetReached`, `EmergencyArmed`, `EmergencyUsed`, `EmergencyExpired`, `SessionEnded`, `Hatched`, `DailyMissed`, `DayClosed`, `BonusLife`, `SetupDone`, `NewSpecies` (`value` = species index, the first time the box hatches that species). `at` is `null` if the clock was unknown then.
+`value` is a number, except for `SessionEnded`, where it's the result kind as text (`"Success"`, `"Aborted"`, `"Broken"` or `"Died"`). `type` is one of: `ArmingStarted`, `ArmingCancelled`, `SessionStarted`, `PlayerJoined`, `Evolved`, `TargetReached`, `EmergencyArmed`, `EmergencyUsed`, `EmergencyExpired`, `SessionEnded`, `Hatched`, `DailyMissed`, `DayClosed`, `BonusLife`, `SetupDone`, `NightStarted` (`value` = hour the pet wakes), `Morning`, `NewSpecies` (`value` = species index, the first time the box hatches that species). `at` is `null` if the clock was unknown then.
 
 ## `GET /api/collection`
 

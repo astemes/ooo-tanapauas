@@ -29,6 +29,8 @@ enum class EventType : uint8_t {
   BonusLife,         // value = hearts now
   SetupDone,
   NewSpecies,        // value = species, first time the box hatched one
+  NightStarted,      // value = hour the pet wakes up
+  Morning,           // the pet woke up
 };
 
 struct Event {
@@ -37,17 +39,18 @@ struct Event {
   uint32_t value = 0;
 };
 
+// Defaults come from tuning.h; tests and the simulator override some.
 struct Config {
   uint8_t num_slots = kMaxSlots;
-  uint32_t arming_ms = 10000;
-  uint32_t autostart_ms = 5000;          // all slots docked this long -> start
-  uint32_t lift_tolerance_ms = 750;      // ignore bumps shorter than this
-  uint32_t emergency_window_ms = 30000;  // time to lift after using the pass
-  uint32_t min_success_minutes = 10;     // shorter "Finish" counts as aborted
-  uint32_t result_timeout_ms = 120000;   // result screen auto-dismisses
-  uint32_t save_every_minutes = 5;
-  uint32_t free_play_bonus_minutes = 60;  // bonus life without a target (else 2x target)
-  uint32_t max_catchup_days = 7;        // missed days penalised after downtime
+  uint32_t arming_ms = kArmingMs;
+  uint32_t autostart_ms = kAutostartMs;
+  uint32_t lift_tolerance_ms = kLiftToleranceMs;
+  uint32_t emergency_window_ms = kEmergencyWindowMs;
+  uint32_t min_success_minutes = kMinSuccessMinutes;
+  uint32_t result_timeout_ms = kResultTimeoutMs;
+  uint32_t save_every_minutes = kSaveEveryMinutes;
+  uint32_t free_play_bonus_minutes = kFreePlayBonusMinutes;
+  uint32_t max_catchup_days = kMaxCatchupDays;
 };
 
 // Day number for daily rules: changes at settings.day_reset_hour local time.
@@ -116,6 +119,8 @@ class Game {
   ShameReason result_cause() const { return cause_; }
   uint8_t last_missed_mask() const { return last_missed_mask_; }
   bool clock_known() const { return now_unix_ != 0; }
+  // Night hours (tuning.h): the pet sleeps and no session can run.
+  bool is_night() const;
   uint32_t seconds_until_day_end() const;
   // The extra-life challenge: keep the session going to double the target
   // (free play: free_play_bonus_minutes). One bonus life per day.
@@ -164,6 +169,7 @@ class Game {
   ShameReason cause_ = ShameReason::None;
   uint8_t last_missed_mask_ = 0;
   bool bonus_earned_ = false;
+  bool night_ = false;
   uint32_t rng_ = 0x9E3779B9u;
 
   static constexpr int kQueueSize = 16;

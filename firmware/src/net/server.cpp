@@ -77,7 +77,7 @@ const char* state_name(State s) {
   return "Idle";
 }
 const char* mood_name(Mood m) {
-  static const char* kNames[] = {"Happy", "Content", "Sad", "Crying", "Dead"};
+  static const char* kNames[] = {"Happy", "Content", "Sad", "Crying", "Dead", "Sleeping"};
   return kNames[static_cast<int>(m)];
 }
 const char* result_name(ResultKind r) {
@@ -92,7 +92,8 @@ const char* event_name(EventType t) {
   static const char* kNames[] = {"ArmingStarted", "ArmingCancelled", "SessionStarted", "PlayerJoined",
                                  "Evolved",       "TargetReached",   "EmergencyArmed", "EmergencyUsed",
                                  "EmergencyExpired", "SessionEnded", "Hatched",        "DailyMissed",
-                                 "DayClosed",     "BonusLife",       "SetupDone",      "NewSpecies"};
+                                 "DayClosed",     "BonusLife",       "SetupDone",      "NewSpecies",
+                                 "NightStarted",  "Morning"};
   return kNames[static_cast<int>(t)];
 }
 
@@ -220,6 +221,8 @@ void handle_state(WiFiClient& c, uint32_t now_ms) {
   j.raw("{\"api\":1,");
   j.key("now"); clock ? j.fmt("%lu,", (unsigned long)unix) : j.raw("null,");
   j.key("clock"); j.boolean(clock); j.raw(",");
+  j.key("night"); j.boolean(g->is_night()); j.raw(",");
+  j.key("night_hours"); j.fmt("[%u,%u],", kNightStartHour, kNightEndHour);
   j.key("day_ends_in_s");
   clock && g->clock_known() ? j.fmt("%lu,", (unsigned long)g->seconds_until_day_end()) : j.raw("null,");
   j.key("settings"); settings_json(j, d.settings); j.raw(",");

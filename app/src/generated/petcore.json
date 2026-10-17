@@ -14,7 +14,8 @@
   "Content",
   "Sad",
   "Crying",
-  "Dead"
+  "Dead",
+  "Sleeping"
  ],
  "bodies": [
   [
@@ -168,6 +169,12 @@
    ".t....t.",
    ".t.##.t.",
    "..#..#.."
+  ],
+  [
+   "##....##",
+   "........",
+   "...##...",
+   "........"
   ]
  ],
  "closedEyes": "##....##",
@@ -467,16 +474,36 @@
   "eggAccent": "8FD3C8"
  },
  "tuning": {
-  "kMaxSlots": 4,
   "kMaxHearts": 3,
   "kMaxBonusHearts": 5,
+  "kHeartsLostPerBreak": 1,
+  "kHeartsHealedPerSuccess": 1,
   "kMaxHappiness": 100,
   "kStartHappiness": 60,
-  "kBreakHappinessLoss": 35,
   "kSuccessHappinessGain": 10,
   "kMinutesPerHappinessPoint": 6,
+  "kBreakHappinessLoss": 35,
   "kAbsenceHappinessLossPerDay": 8,
+  "kHappyMoodAt": 70,
+  "kContentMoodAt": 35,
+  "kXpPerMinute": 2,
   "kCompletionBonusPercent": 20,
+  "kGoalXpPerMinute": 1,
+  "kDefaultEggMinutes": 30,
+  "kBonusGoalMultiplier": 2,
+  "kFreePlayBonusMinutes": 60,
+  "kNightStartHour": 22,
+  "kNightEndHour": 7,
+  "kDefaultDailyMinimum": 30,
+  "kDefaultDayResetHour": 4,
+  "kMaxCatchupDays": 7,
+  "kArmingMs": 10000,
+  "kAutostartMs": 1500,
+  "kLiftToleranceMs": 750,
+  "kEmergencyWindowMs": 30000,
+  "kMinSuccessMinutes": 10,
+  "kResultTimeoutMs": 120000,
+  "kSaveEveryMinutes": 5,
   "kStageXp": [
    0,
    30,

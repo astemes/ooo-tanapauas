@@ -276,6 +276,7 @@ Face kFaceHappy = {".#....#.", "p......p", "..#..#..", "...##..."};
 Face kFaceContent = {".#....#.", "p......p", "...##...", "........"};
 Face kFaceSad = {".#....#.", "........", "...##...", "..#..#.."};
 Face kFaceCrying = {"##....##", ".t....t.", ".t.##.t.", "..#..#.."};
+Face kFaceSleeping = {"##....##", "........", "...##...", "........"};
 constexpr const char* kClosedEyes = "##....##";
 
 struct FaceAnchor {
@@ -338,7 +339,8 @@ void render_pet(uint8_t species, Stage stage, Mood mood, uint32_t frame, Sprite 
 
   if (stage == Stage::Egg) {
     // Wobble side to side; sad eggs sit still.
-    int dx = mood == Mood::Sad ? 0 : (frame % 4 == 1 ? -1 : frame % 4 == 3 ? 1 : 0);
+    bool still = mood == Mood::Sad || mood == Mood::Sleeping;
+    int dx = still ? 0 : (frame % 4 == 1 ? -1 : frame % 4 == 3 ? 1 : 0);
     blit(kEgg, kSpriteSize, kSpriteSize, dx, 0, false, out);
     return;
   }
@@ -353,9 +355,10 @@ void render_pet(uint8_t species, Stage stage, Mood mood, uint32_t frame, Sprite 
   const char* const* face = mood == Mood::Happy     ? kFaceHappy
                             : mood == Mood::Content ? kFaceContent
                             : mood == Mood::Sad     ? kFaceSad
+                            : mood == Mood::Sleeping ? kFaceSleeping
                                                     : kFaceCrying;
   const char* rows[kFaceH] = {face[0], face[1], face[2], face[3]};
-  bool blink = mood != Mood::Crying && frame % 8 == 7;
+  bool blink = mood != Mood::Crying && mood != Mood::Sleeping && frame % 8 == 7;
   if (blink) rows[0] = kClosedEyes;
   FaceAnchor at = kFaceAt[static_cast<int>(stage)];
   blit(rows, kFaceW, kFaceH, at.x, at.y + bob, true, out);

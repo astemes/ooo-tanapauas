@@ -12,8 +12,12 @@ bool describe_shame(const Game& game, char* buf, size_t len) {
       std::snprintf(buf, len, "%s picked up their phone mid-session.", who);
       return true;
     case ShameReason::MissedDaily:
-      std::snprintf(buf, len, "%s missed the daily %u min.", who,
-                    static_cast<unsigned>(game.data().settings.daily_minimum_min));
+      if (shame.slot == kNoSlot)
+        std::snprintf(buf, len, "The team missed the daily %u min.",
+                      static_cast<unsigned>(game.data().settings.daily_minimum_min));
+      else
+        std::snprintf(buf, len, "%s missed the daily %u min.", who,
+                      static_cast<unsigned>(game.data().settings.daily_minimum_min));
       return true;
     case ShameReason::PowerCut:
       std::snprintf(buf, len, "Someone pulled the plug.");
@@ -52,6 +56,13 @@ bool describe_event(const Event& e, const Game& game, char* buf, size_t len) {
         std::snprintf(buf, len, "Your %s grew into a %s!", species_name(species), stage_name(stage));
       return true;
     }
+    case EventType::NightStarted:
+      std::snprintf(buf, len, "Bedtime! The pet sleeps until %02u:00. Keep the phones away.",
+                    static_cast<unsigned>(e.value));
+      return true;
+    case EventType::Morning:
+      std::snprintf(buf, len, "Good morning! The pet is awake.");
+      return true;
     case EventType::NewSpecies:
       std::snprintf(buf, len, "New in your collection: %s (%s).", species_name(static_cast<uint8_t>(e.value)),
                     rarity_name(species_info(static_cast<uint8_t>(e.value)).rarity));
@@ -77,20 +88,20 @@ bool describe_event(const Event& e, const Game& game, char* buf, size_t len) {
       std::snprintf(buf, len, "A new egg appeared. Generation %u.", static_cast<unsigned>(e.value));
       return true;
     case EventType::DailyMissed:
-      std::snprintf(buf, len, "%s only managed %u of %u min yesterday. The pet lost a heart!", who,
-                    static_cast<unsigned>(e.value), daily_min);
+      std::snprintf(buf, len, "%s only managed %u of %u min yesterday. The pet lost a heart!",
+                    e.slot == kNoSlot ? "The team" : who, static_cast<unsigned>(e.value), daily_min);
       return true;
     case EventType::DayClosed:
       if (e.value != 0) return false;  // DailyMissed already said who
       if (daily_min == 0) return false;
-      std::snprintf(buf, len, "Perfect day! Everyone hit their %u min.", daily_min);
+      std::snprintf(buf, len, "Perfect day! The team hit its %u min.", daily_min);
       return true;
     case EventType::BonusLife:
       std::snprintf(buf, len, "Challenge done: %u min! Extra life: %u hearts.",
                     static_cast<unsigned>(game.bonus_goal_minutes()), static_cast<unsigned>(e.value));
       return true;
     case EventType::SetupDone:
-      std::snprintf(buf, len, "All set. Pick an egg to begin.");
+      std::snprintf(buf, len, "All set. Pick an egg, then everyone docks.");
       return true;
     case EventType::SessionEnded:
       switch (static_cast<ResultKind>(e.value)) {
@@ -109,7 +120,8 @@ bool describe_event(const Event& e, const Game& game, char* buf, size_t len) {
           return true;
         case ResultKind::Died:
           if (game.result_cause() == ShameReason::MissedDaily)
-            std::snprintf(buf, len, "%s missed the daily %u min... and the pet died.", who, daily_min);
+            std::snprintf(buf, len, "%s missed the daily %u min... and the pet died.",
+                          e.slot == kNoSlot ? "The team" : who, daily_min);
           else if (e.slot == kNoSlot)
             std::snprintf(buf, len, "Someone pulled the plug... and the pet died.");
           else

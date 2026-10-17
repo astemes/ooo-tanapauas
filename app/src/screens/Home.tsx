@@ -98,13 +98,20 @@ export function Home(c: Ctx) {
         </Card>
       ) : running ? (
         <Card class="hero nudge">
-          <h2>A session is running without you!</h2>
-          <p>Dock your phone in slot {p.slot + 1} to join and earn XP for the pet.</p>
+          <h2>You left on the emergency pass</h2>
+          <p>The team carries on. Dock your phone in slot {p.slot + 1} again to rejoin.</p>
         </Card>
       ) : s.state === "Arming" ? (
         <Card class="hero nudge">
           <h2>Session starting…</h2>
-          <p>Dock your phone in slot {p.slot + 1} now to be in it.</p>
+          <p>Every phone is docked. Keep it that way: the team wins or loses together.</p>
+        </Card>
+      ) : st.night && s.state === "Idle" ? (
+        <Card class="hero calm">
+          <h2>The pet is asleep</h2>
+          <p class="muted">
+            Sessions start again at {String(st.night_hours[1]).padStart(2, "0")}:00. Phones away for the night too.
+          </p>
         </Card>
       ) : s.state === "Result" && st.result ? (
         <Card class={"hero " + (st.result.kind === "Success" ? "calm" : "alarm")}>
@@ -120,8 +127,8 @@ export function Home(c: Ctx) {
         <Card class="hero nudge go">
           <h2>Go dock your phone</h2>
           <p>
-            <b>{need} more min</b> today{left !== null && <> · day ends in {hm(left)}</>}. Miss it and the pet loses a heart
-            and you go on the wall of shame.
+            The team needs <b>{need} more min</b> today{left !== null && <> · day ends in {hm(left)}</>}. The session starts
+            by itself when every phone is docked. Miss the minimum and the pet loses a heart.
           </p>
         </Card>
       ) : (

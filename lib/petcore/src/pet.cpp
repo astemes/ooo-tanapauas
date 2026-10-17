@@ -32,10 +32,7 @@ uint32_t next_stage_xp(Stage s) {
 }
 
 uint32_t xp_per_minute(int players) {
-  if (players <= 0) return 0;
-  // Bigger groups are harder to keep off their phones, so reward them more.
-  int bonus = players >= 4 ? 2 : players >= 3 ? 1 : 0;
-  return static_cast<uint32_t>(players + bonus);
+  return players > 0 ? kXpPerMinute : 0;
 }
 
 bool pet_add_xp(Pet& pet, uint32_t xp) {
@@ -49,13 +46,14 @@ bool pet_add_xp(Pet& pet, uint32_t xp) {
 }
 
 void pet_on_success(Pet& pet, uint32_t minutes) {
-  if (pet.hearts < kMaxHearts) pet.hearts++;
+  int healed = pet.hearts + kHeartsHealedPerSuccess;
+  if (pet.hearts < kMaxHearts) pet.hearts = static_cast<uint8_t>(healed < kMaxHearts ? healed : kMaxHearts);
   pet.happiness = clamp_happiness(pet.happiness + kSuccessHappinessGain +
                                   static_cast<int>(minutes / kMinutesPerHappinessPoint));
 }
 
 bool pet_on_break(Pet& pet) {
-  if (pet.hearts > 0) pet.hearts--;
+  pet.hearts = pet.hearts > kHeartsLostPerBreak ? static_cast<uint8_t>(pet.hearts - kHeartsLostPerBreak) : 0;
   pet.happiness = clamp_happiness(pet.happiness - kBreakHappinessLoss);
   return pet.hearts == 0;
 }
@@ -80,8 +78,8 @@ void pet_apply_absence(Pet& pet, uint32_t days) {
 
 Mood pet_mood(const Pet& pet) {
   if (pet.hearts == 0) return Mood::Dead;
-  if (pet.happiness >= 70) return Mood::Happy;
-  if (pet.happiness >= 35) return Mood::Content;
+  if (pet.happiness >= kHappyMoodAt) return Mood::Happy;
+  if (pet.happiness >= kContentMoodAt) return Mood::Content;
   return Mood::Sad;
 }
 

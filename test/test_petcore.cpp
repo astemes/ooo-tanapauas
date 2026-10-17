@@ -46,6 +46,7 @@ constexpr uint32_t kHour = 60 * kMin;
 constexpr uint8_t kAll = 0x0F;
 constexpr uint32_t kDay = 86400;
 constexpr uint32_t kUnix0 = 1767240000;  // 2026-01-01 04:00 UTC: a day boundary with reset 04:00
+constexpr uint32_t kMorning = kUnix0 + 6 * 3600;  // 10:00, after the night (tuning.h)
 
 SaveData ready_save(uint8_t players = 4, uint16_t daily_min = 30) {
   SaveData d;
@@ -114,17 +115,16 @@ TEST(stage_thresholds) {
   CHECK(next_stage_xp(Stage::Elder) == 0);
 }
 
-TEST(xp_scales_with_players) {
+TEST(xp_is_the_same_for_any_team_size) {
   CHECK(xp_per_minute(0) == 0);
-  CHECK(xp_per_minute(1) == 1);
-  CHECK(xp_per_minute(2) == 2);
-  CHECK(xp_per_minute(3) == 4);
-  CHECK(xp_per_minute(4) == 6);
+  CHECK(xp_per_minute(1) == kXpPerMinute);
+  CHECK(xp_per_minute(2) == kXpPerMinute);
+  CHECK(xp_per_minute(4) == kXpPerMinute);
 }
 
 TEST(arming_then_running) {
   Sim s;
-  s.docked = 0b0011;
+  s.docked = kAll;
   s.step(100);
   CHECK(s.game.start(s.now));
   CHECK(s.game.state() == State::Arming);
@@ -132,7 +132,7 @@ TEST(arming_then_running) {
   CHECK(s.game.state() == State::Arming);
   s.step(5100);
   CHECK(s.game.state() == State::Running);
-  CHECK(s.game.armed_mask() == 0b0011);
+  CHECK(s.game.armed_mask() == kAll);
   CHECK(s.game.data().session.active);
   CHECK(s.saw(EventType::SessionStarted));
 }
@@ -156,22 +156,22 @@ TEST(lift_during_arming_cancels_without_penalty) {
   CHECK(s.game.data().pet.hearts == kMaxHearts);
 }
 
-TEST(late_joiner_during_arming) {
-  Sim s;
-  s.docked = 0b0001;
+TEST(start_needs_every_player) {
+  Sim s(Config{}, ready_save(3));
+  s.docked = 0b0011;
   s.step(100);
-  s.game.start(s.now);
-  s.docked = 0b0101;
-  s.step(200);
-  CHECK(s.game.armed_mask() == 0b0101);
+  CHECK(!s.game.start(s.now));  // a team game: player 3 is missing
+  s.docked = 0b0111;
+  s.step(100);
+  CHECK(s.game.start(s.now));
 }
 
 TEST(autostart_when_all_docked) {
   Sim s;
   s.docked = kAll;
-  s.step(4000);
+  s.step(kAutostartMs - 500);
   CHECK(s.game.state() == State::Idle);
-  s.step(1500);
+  s.step(600);
   CHECK(s.game.state() == State::Arming);
 }
 
@@ -180,7 +180,7 @@ TEST(xp_awarded_per_minute) {
   s.start_running(kAll);
   s.step(3 * kMin);
   CHECK(s.game.session_minutes() == 3);
-  CHECK(s.game.data().pet.xp == 3 * 6);
+  CHECK(s.game.data().pet.xp == 3 * kXpPerMinute);
   CHECK(s.game.data().life.total_minutes == 3);
 }
 
@@ -188,7 +188,7 @@ TEST(egg_hatches_into_baby) {
   Sim s;
   CHECK(s.game.data().pet.species == kNoSpecies);
   s.start_running(kAll);
-  s.step(5 * kMin);  // 30 xp
+  s.step(kStageXp[1] / kXpPerMinute * kMin);  // Baby
   const SaveData& d = s.game.data();
   CHECK(d.pet.stage == Stage::Baby);
   CHECK(s.saw(EventType::Evolved));
@@ -196,7 +196,7 @@ TEST(egg_hatches_into_baby) {
   CHECK(d.collection.count[d.pet.species] == 1);
   CHECK(d.collection.best_stage[d.pet.species] == static_cast<uint8_t>(Stage::Baby));
   CHECK(s.count(EventType::NewSpecies) == 1);
-  s.step(20 * kMin);  // 150 xp: Child
+  s.step((kStageXp[2] - kStageXp[1]) / kXpPerMinute * kMin);  // Child
   CHECK(d.collection.best_stage[d.pet.species] == static_cast<uint8_t>(Stage::Child));
   CHECK(s.count(EventType::NewSpecies) == 1);
 }
@@ -451,12 +451,17 @@ TEST(unused_emergency_window_expires_and_pass_is_kept) {
   CHECK(s.game.emergency_available());
 }
 
-TEST(rejoin_mid_session) {
+TEST(rejoin_after_emergency_pass) {
   Sim s;
-  s.start_running(0b0011);
+  s.start_running(kAll);
+  s.game.request_emergency(s.now);
+  s.docked = 0b0011;  // two players leave on the pass? Only the first one does.
   s.docked = 0b0111;
-  s.step(200);
+  s.step(1000);
   CHECK(s.game.armed_mask() == 0b0111);
+  s.docked = kAll;
+  s.step(200);
+  CHECK(s.game.armed_mask() == kAll);
   CHECK(s.saw(EventType::PlayerJoined));
 }
 
@@ -571,34 +576,35 @@ TEST(only_configured_players_count) {
   CHECK(s.game.data().pet.xp == xp_per_minute(2));
 }
 
-TEST(daily_minutes_are_credited_per_player) {
+TEST(team_sessions_credit_every_player) {
   Sim s(Config{}, ready_save(4));
-  s.unix = kUnix0 + 3600;
-  s.start_running(0b0101);
+  s.unix = kMorning;
+  s.start_running(kAll);
   s.step(20 * kMin);
-  CHECK(s.game.data().daily.minutes[0] == 20);
-  CHECK(s.game.data().daily.minutes[1] == 0);
-  CHECK(s.game.data().daily.minutes[2] == 20);
+  for (int p = 0; p < 4; p++) CHECK(s.game.data().daily.minutes[p] == 20);
 }
 
-TEST(missing_daily_minimum_costs_a_heart_and_shames) {
+TEST(missing_daily_minimum_alone_costs_a_heart_and_shames) {
   Sim s(Config{}, ready_save(2, 30));
-  s.unix = kUnix0 + 3600;
+  s.unix = kMorning;
   s.start_running(0b0011);
   s.step(31 * kMin);
-  s.docked = 0b0001;  // player 2 leaves via emergency pass... no, finish instead
   s.game.finish(s.now);
   s.game.acknowledge();
   s.docked = 0;
-  // Player 1 and 2 both got 31 min today: tomorrow is a perfect day.
+  // Both got 31 min today: tomorrow is a perfect day.
   s.jump_days(1);
   CHECK(s.count(EventType::DailyMissed) == 0);
   CHECK(s.game.data().life.perfect_days == 1);
   CHECK(s.game.data().life.daily_streak[0] == 1);
 
-  // Next day only player 1 plays 30 min.
-  s.start_running(0b0001);
-  s.step(30 * kMin + 500);
+  // Next day player 2 leaves early on the emergency pass; player 1 stays 30 min.
+  s.start_running(0b0011);
+  s.step(5 * kMin);
+  s.game.request_emergency(s.now);
+  s.docked = 0b0001;
+  s.step(1000);
+  s.step(25 * kMin + 500);
   s.game.finish(s.now);
   s.game.acknowledge();
   s.docked = 0;
@@ -616,25 +622,34 @@ TEST(missing_daily_minimum_costs_a_heart_and_shames) {
   CHECK(std::strstr(buf, "Player 2") != nullptr);
 }
 
-TEST(each_missing_player_costs_a_heart_and_can_kill) {
+TEST(team_missing_the_daily_minimum_loses_one_heart_together) {
   Sim s(Config{}, ready_save(3, 30));
-  s.unix = kUnix0 + 3600;
+  s.unix = kMorning;
   s.step(100);
-  s.jump_days(1);  // nobody played: 3 players miss -> 3 hearts -> dead
+  s.jump_days(1);  // nobody played: the team loses one heart, not three
+  CHECK(s.game.data().pet.hearts == kMaxHearts - 1);
+  CHECK(s.count(EventType::DailyMissed) == 1);
+  CHECK(s.game.data().life.shame.slot == kNoSlot);
+  char buf[96];
+  CHECK(describe_shame(s.game, buf, sizeof buf));
+  CHECK(std::strstr(buf, "The team") != nullptr);
+  s.jump_days(1);
+  s.jump_days(1);  // third miss in a row: the pet dies
   CHECK(s.game.state() == State::Result);
   CHECK(s.game.result() == ResultKind::Died);
   CHECK(s.game.result_cause() == ShameReason::MissedDaily);
-  CHECK(s.game.culprit() == 0);
   CHECK(s.game.data().life.graveyard == 1);
   CHECK(s.game.acknowledge());
   CHECK(s.game.data().pet.generation == 2);
 }
 
 TEST(days_do_not_close_mid_session) {
-  Sim s(Config{}, ready_save(1, 30));
-  s.unix = kUnix0 + kDay - 20 * 60;  // 20 min before the reset
+  SaveData d = ready_save(1, 30);
+  d.settings.day_reset_hour = 21;  // a reset before the night starts
+  Sim s(Config{}, d);
+  s.unix = kUnix0 + (21 - 4) * 3600 - 20 * 60;  // 20:40, 20 min before the reset
   s.start_running(0b0001);
-  s.step(40 * kMin);  // runs past 04:00
+  s.step(40 * kMin);  // runs past 21:00
   CHECK(s.count(EventType::DayClosed) == 0);
   CHECK(s.game.data().daily.minutes[0] >= 30);
   s.game.finish(s.now);
@@ -642,6 +657,25 @@ TEST(days_do_not_close_mid_session) {
   s.step(100);
   CHECK(s.count(EventType::DayClosed) == 1);
   CHECK(s.count(EventType::DailyMissed) == 0);  // the minutes counted for the old day
+}
+
+TEST(night_stops_sessions_and_the_pet_sleeps) {
+  Sim s(Config{}, ready_save(2, 0));
+  s.unix = kUnix0 + (kNightStartHour - 4) * 3600 - 40 * 60;  // 40 min before bedtime
+  s.start_running(0b0011);
+  CHECK(s.game.state() == State::Running);
+  s.step(40 * kMin + 30000);  // bedtime, then less than the result screen's timeout
+  CHECK(s.saw(EventType::NightStarted));
+  CHECK(s.game.state() == State::Result);
+  CHECK(s.game.result() == ResultKind::Success);  // ends like Finish, 40 min in
+  s.game.acknowledge();
+  CHECK(s.game.mood() == Mood::Sleeping);
+  s.docked = 0;
+  s.step(1000);
+  s.docked = 0b0011;
+  s.step(10000);
+  CHECK(!s.game.start(s.now));  // no sessions at night, no autostart either
+  CHECK(s.game.state() == State::Idle);
 }
 
 TEST(no_clock_means_no_daily_rules) {
@@ -665,7 +699,7 @@ TEST(long_downtime_is_capped) {
 
 TEST(double_the_goal_gives_bonus_life_above_max) {
   Sim s(Config{}, ready_save(2, 0));
-  s.unix = kUnix0 + 3600;
+  s.unix = kMorning;
   s.game.choose_egg(15);
   s.start_running(0b0011);
   CHECK(s.game.bonus_goal_minutes() == 30);
@@ -699,7 +733,7 @@ TEST(double_the_goal_gives_bonus_life_above_max) {
 
 TEST(free_play_bonus_after_an_hour) {
   Sim s(Config{}, ready_save(3, 0));
-  s.start_running(0b0011);  // late or missing players don't matter any more
+  s.start_running(0b0111);
   CHECK(s.game.bonus_goal_minutes() == 60);
   s.step(59 * kMin);
   CHECK(s.count(EventType::BonusLife) == 0);

@@ -15,8 +15,8 @@ constexpr int kNameLen = 12;
 struct Settings {
   bool setup_done = false;
   uint8_t num_players = kMaxSlots;   // players use slots 0..num_players-1
-  uint16_t daily_minimum_min = 30;   // 0 disables the daily challenge
-  uint8_t day_reset_hour = 4;        // local hour when a new day starts
+  uint16_t daily_minimum_min = kDefaultDailyMinimum;  // 0 disables the daily challenge
+  uint8_t day_reset_hour = kDefaultDayResetHour;      // local hour when a new day starts
   int16_t tz_offset_min = 0;         // local time = UTC + offset
   uint16_t pin = 0;                  // 4-digit PIN for changes made from the app
   char names[kMaxSlots][kNameLen + 1] = {};

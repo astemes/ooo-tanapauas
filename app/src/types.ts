@@ -1,7 +1,7 @@
 // Shapes from docs/api.md (API v1).
 
 export type StageName = "Egg" | "Baby" | "Child" | "Teen" | "Adult" | "Elder";
-export type MoodName = "Happy" | "Content" | "Sad" | "Crying" | "Dead";
+export type MoodName = "Happy" | "Content" | "Sad" | "Crying" | "Dead" | "Sleeping";
 export type ShameReason = "Lift" | "MissedDaily" | "PowerCut";
 export type Rarity = "Common" | "Uncommon" | "Rare" | "Legendary";
 
@@ -30,6 +30,9 @@ export interface State {
   api: number;
   now: number;
   clock: boolean;
+  // Night hours (local): the pet sleeps and no session runs.
+  night: boolean;
+  night_hours: [number, number];
   day_ends_in_s: number | null;
   settings: Settings;
   pet: {

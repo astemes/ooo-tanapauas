@@ -41,7 +41,7 @@ pio run -d firmware
 
 **Game rules and presentation logic stay in `petcore`.** That includes timing, scoring, odds, what the pet looks like (`render_pet`, `palette_rgb`) and what the messages say (`describe_event`, `describe_shame`). Frontends only draw what petcore gives them and pass inputs back. This keeps the box, the simulator, the tests and the app in agreement: the app even draws its pets from sprite data exported out of `sprites.cpp` (`app/scripts/export-petcore.py`).
 
-If you change a rule, change it in petcore, add or update a test in `test/test_petcore.cpp`, and update [docs/game-design.md](docs/game-design.md). If you change the API, update [docs/api.md](docs/api.md), `app/src/types.ts` and the mock box in `app/mock/server.mjs`.
+Gameplay numbers (hearts, XP, eggs and odds, timings) all live in `lib/petcore/src/tuning.h`. If you change a rule, change it in petcore, add or update a test in `test/test_petcore.cpp`, and update [docs/game-design.md](docs/game-design.md). If you change the API, update [docs/api.md](docs/api.md), `app/src/types.ts` and the mock box in `app/mock/server.mjs`.
 
 ## Porting to other hardware
 
@@ -67,7 +67,7 @@ A buzzer, a touchscreen and persistent storage are nice to have. Without storage
 
 The game still works:
 
-- **Starting:** sessions start on their own when every player's phone is docked (`Config::autostart_ms`, 5 s by default), followed by the usual countdown.
+- **Starting:** sessions always start on their own when every player's phone is docked (`kAutostartMs`, 1.5 s), followed by the countdown. The box has no Start button either.
 - **Linking phones:** show the app's QR code on screen permanently instead of the *Link phone* button.
 - **Everything else** moves to the companion app: picking an egg (`POST /api/egg`), starting a new pet (`POST /api/pet/new`), player names and settings. The PIN that guards these is shown on the box's settings screen today, so a screen-only port should show it somewhere else (for example on the idle screen) or print it over serial.
 

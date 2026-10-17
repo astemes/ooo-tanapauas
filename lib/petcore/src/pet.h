@@ -2,33 +2,23 @@
 #pragma once
 #include <cstdint>
 
+#include "tuning.h"
+
 namespace petcore {
 
 constexpr int kMaxSlots = 4;
 constexpr uint8_t kNoSlot = 0xFF;  // culprit when nobody in particular (power loss)
 
 enum class Stage : uint8_t { Egg = 0, Baby, Child, Teen, Adult, Elder, Count };
-enum class Mood : uint8_t { Happy, Content, Sad, Crying, Dead };
+enum class Mood : uint8_t { Happy, Content, Sad, Crying, Dead, Sleeping };
 
-// ---- Tuning -------------------------------------------------------------
-constexpr uint8_t kMaxHearts = 3;       // successful sessions heal up to this
-constexpr uint8_t kMaxBonusHearts = 5;  // bonus lives can bank above it
-constexpr uint8_t kMaxHappiness = 100;
-constexpr uint8_t kStartHappiness = 60;
-constexpr uint8_t kBreakHappinessLoss = 35;
-constexpr uint8_t kSuccessHappinessGain = 10;
-constexpr uint8_t kMinutesPerHappinessPoint = 6;
-constexpr uint8_t kAbsenceHappinessLossPerDay = 8;
-constexpr uint8_t kCompletionBonusPercent = 20;
-
-// XP needed to reach each stage (index = Stage).
-constexpr uint32_t kStageXp[] = {0, 30, 150, 500, 1500, 4000};
+// Every gameplay number is in tuning.h.
 
 struct Pet {
   uint8_t species = 0xFF;  // see species.h; kNoSpecies until the egg hatches
   // The egg's time setting: every session's goal for this pet, and the odds
   // of a rare hatch (species.h kEggs). 0 = free play (tests, simulator).
-  uint16_t egg_minutes = 30;
+  uint16_t egg_minutes = kDefaultEggMinutes;
   uint32_t xp = 0;
   Stage stage = Stage::Egg;
   uint8_t hearts = kMaxHearts;
@@ -69,7 +59,7 @@ Stage stage_for_xp(uint32_t xp);
 // XP needed for the next stage, or 0 at the final stage.
 uint32_t next_stage_xp(Stage s);
 
-// XP per session minute for a given number of docked players.
+// XP per session minute; the same for any team size (0 with nobody docked).
 uint32_t xp_per_minute(int players);
 
 // Returns true if the pet evolved to a new stage.

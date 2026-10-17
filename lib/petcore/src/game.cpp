@@ -101,6 +101,22 @@ void Game::update(uint32_t now_ms, uint8_t docked_mask, uint32_t now_unix) {
   if (state_ == State::Setup) return;
   track_day(now_ms);
 
+  // Bedtime: the pet goes to sleep and a running session ends like Finish.
+  bool night = is_night();
+  if (night != night_) {
+    night_ = night;
+    if (night) {
+      if (state_ == State::Arming) cancel();
+      if (state_ == State::Running) {
+        award_minutes(now_ms);
+        end_session(finish_counts_as_success() ? ResultKind::Success : ResultKind::Aborted, kNoSlot, now_ms);
+      }
+      emit(EventType::NightStarted, kNoSlot, kNightEndHour);
+    } else {
+      emit(EventType::Morning);
+    }
+  }
+
   switch (state_) {
     case State::Setup:
       break;
@@ -112,7 +128,7 @@ void Game::update(uint32_t now_ms, uint8_t docked_mask, uint32_t now_unix) {
       } else if (!all_docked_) {
         all_docked_ = true;
         all_docked_since_ = now_ms;
-      } else if (autostart_ready_ && cfg_.autostart_ms > 0 &&
+      } else if (autostart_ready_ && cfg_.autostart_ms > 0 && !night_ &&
                  now_ms - all_docked_since_ >= cfg_.autostart_ms) {
         start(now_ms);
       }
@@ -124,7 +140,6 @@ void Game::update(uint32_t now_ms, uint8_t docked_mask, uint32_t now_unix) {
         cancel();
         break;
       }
-      armed_ |= docked_;  // late joiners are welcome during the countdown
       if (now_ms - arming_started_ >= cfg_.arming_ms) enter_running(now_ms);
       break;
 
@@ -194,7 +209,8 @@ void Game::update(uint32_t now_ms, uint8_t docked_mask, uint32_t now_unix) {
 }
 
 bool Game::start(uint32_t now_ms) {
-  if (state_ != State::Idle || docked_ == 0) return false;
+  // A team game: every player's phone must be docked, and not at night.
+  if (state_ != State::Idle || docked_ == 0 || docked_ != all_slots() || is_night()) return false;
   armed_ = docked_;
   arming_started_ = now_ms;
   autostart_ready_ = false;
@@ -359,7 +375,7 @@ uint32_t Game::seconds_until_day_end() const {
 
 uint32_t Game::bonus_goal_minutes() const {
   uint16_t goal = target_minutes();
-  return goal ? 2u * goal : cfg_.free_play_bonus_minutes;
+  return goal ? static_cast<uint32_t>(kBonusGoalMultiplier) * goal : cfg_.free_play_bonus_minutes;
 }
 
 bool Game::bonus_available_today() const {
@@ -371,7 +387,17 @@ Mood Game::mood() const {
     if (result_ == ResultKind::Died) return Mood::Dead;
     if (result_ == ResultKind::Broken) return Mood::Crying;
   }
-  return pet_mood(data_.pet);
+  Mood m = pet_mood(data_.pet);
+  if (m != Mood::Dead && state_ == State::Idle && is_night()) return Mood::Sleeping;
+  return m;
+}
+
+bool Game::is_night() const {
+  if (now_unix_ == 0 || kNightStartHour == kNightEndHour) return false;
+  int64_t local = static_cast<int64_t>(now_unix_) + data_.settings.tz_offset_min * 60;
+  int hour = static_cast<int>(((local / 3600) % 24 + 24) % 24);
+  if (kNightStartHour > kNightEndHour) return hour >= kNightStartHour || hour < kNightEndHour;
+  return hour >= kNightStartHour && hour < kNightEndHour;
 }
 
 void Game::emit(EventType type, uint8_t slot, uint32_t value) {
@@ -434,7 +460,7 @@ void Game::end_session(ResultKind kind, uint8_t culprit, uint32_t now_ms) {
   Lifetime& life = data_.life;
   switch (kind) {
     case ResultKind::Success:
-      bonus_xp_ = session_xp_ * kCompletionBonusPercent / 100 + (target_reached_ ? target_minutes() : 0);
+      bonus_xp_ = session_xp_ * kCompletionBonusPercent / 100 + (target_reached_ ? target_minutes() * kGoalXpPerMinute : 0u);
       add_xp(bonus_xp_);
       pet_on_success(data_.pet, minutes_awarded_);
       life.sessions_success++;
@@ -505,8 +531,10 @@ void Game::close_day(uint32_t now_ms) {
   uint16_t minimum = data_.settings.daily_minimum_min;
   uint8_t missed = 0;
 
+  uint16_t best = 0;
   for (int p = 0; p < data_.settings.num_players; p++) {
     if (minimum == 0) break;
+    if (daily.minutes[p] > best) best = daily.minutes[p];
     if (daily.minutes[p] >= minimum) {
       life.daily_streak[p]++;
       if (life.daily_streak[p] > life.best_daily_streak[p]) life.best_daily_streak[p] = life.daily_streak[p];
@@ -514,22 +542,26 @@ void Game::close_day(uint32_t now_ms) {
       life.daily_streak[p] = 0;
       life.missed_days[p]++;
       missed |= 1u << p;
-      emit(EventType::DailyMissed, static_cast<uint8_t>(p), daily.minutes[p]);
     }
   }
+  // Sessions are team sessions, so usually everyone misses together: say it
+  // once for the team. Only someone who left with the emergency pass can miss alone.
+  bool team_missed = missed == all_slots();
+  if (team_missed) emit(EventType::DailyMissed, kNoSlot, best);
+  else
+    for (int p = 0; p < kMaxSlots; p++)
+      if (missed & (1u << p)) emit(EventType::DailyMissed, static_cast<uint8_t>(p), daily.minutes[p]);
   if (minimum > 0 && missed == 0) life.perfect_days++;
   for (uint16_t& m : daily.minutes) m = 0;
   emit(EventType::DayClosed, kNoSlot, missed);
   if (missed == 0) return;
 
-  // Each player who missed costs the pet a heart; the first one is named.
+  // One lost heart for the team, however many missed. A lone player is named.
   uint8_t first = kNoSlot;
-  bool died = false;
-  for (int p = 0; p < kMaxSlots && !died; p++) {
-    if (!(missed & (1u << p))) continue;
-    if (first == kNoSlot) first = static_cast<uint8_t>(p);
-    died = pet_on_break(data_.pet);
-  }
+  if (!team_missed)
+    for (int p = 0; p < kMaxSlots && first == kNoSlot; p++)
+      if (missed & (1u << p)) first = static_cast<uint8_t>(p);
+  bool died = pet_on_break(data_.pet);
   life.shame = Shame{first, ShameReason::MissedDaily, now_unix_};
   last_missed_mask_ = missed;
   dirty_ = true;

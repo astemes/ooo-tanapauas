@@ -116,7 +116,7 @@ function step(t) {
   if (day > today && clockKnown) closeDay(day);
   if (state === "Idle" && t >= stateUntil) {
     state = "Arming"; stateUntil = t + 10;
-    for (const p of active().slice(0, 2)) p.docked = true;
+    for (const p of active()) p.docked = true; // team game: everyone docks, which starts the countdown
     emit("ArmingStarted", null, 0, "Phones docked. Session starts in 10 s.");
   } else if (state === "Arming" && t >= stateUntil) {
     state = "Running";
@@ -127,10 +127,6 @@ function step(t) {
   } else if (state === "Running") {
     session.elapsed_s++;
     const ins = active().filter((p) => p.in_session);
-    if (session.elapsed_s === 6 * 60 && !active()[2].docked) {
-      const c = active()[2]; c.docked = c.in_session = true;
-      emit("PlayerJoined", c.slot, 0, `${c.name} joined the session.`);
-    }
     const lifter = active()[1];
     if (session.liftAt !== null && session.elapsed_s === session.liftAt * 60) { lifter.lifting = true; lifter.docked = false; }
     if (session.liftAt !== null && session.elapsed_s === session.liftAt * 60 + 20) return endSession("Broken", lifter);
@@ -219,7 +215,7 @@ function snapshot() {
   const running = state === "Running";
   const s = stageIndex();
   return {
-    api: 1, now: now(), clock: clockKnown, day_ends_in_s: clockKnown ? dayEndsIn() : null, settings,
+    api: 1, now: now(), clock: clockKnown, night: false, night_hours: [22, 7], day_ends_in_s: clockKnown ? dayEndsIn() : null, settings,
     pet: {
       stage: STAGES[s], stage_index: s,
       egg_minutes: pet.egg_minutes, egg_locked: eggLocked(), rare_chance: rareChance(pet.egg_minutes),

@@ -24,7 +24,7 @@ export const hatchOdds = (s: number, minutes = 30) => {
   const r = SPECIES[s].rarity;
   return egg(minutes).weight[RARITIES.indexOf(r)] / SPECIES.filter((x) => x.rarity === r).length;
 };
-const MOOD = { Happy: 0, Content: 1, Sad: 2, Crying: 3, Dead: 4 } as const;
+const MOOD = { Happy: 0, Content: 1, Sad: 2, Crying: 3, Dead: 4, Sleeping: 5 } as const;
 
 // 16 rows of palette characters: '.' transparent, '#' outline, 'o' body, 's' shade,
 // 'w' white, 'p' cheek, 't' tear, 'a' accent.
@@ -47,7 +47,8 @@ export function renderPet(species: number | null, stage: number, mood: number, f
   }
   if (stage === 0) {
     // Wobble side to side; sad eggs sit still.
-    const dx = mood === MOOD.Sad ? 0 : frame % 4 === 1 ? -1 : frame % 4 === 3 ? 1 : 0;
+    const still = mood === MOOD.Sad || mood === MOOD.Sleeping;
+    const dx = still ? 0 : frame % 4 === 1 ? -1 : frame % 4 === 3 ? 1 : 0;
     blit(P.bodies[0], 16, 16, dx, 0, false);
     return out;
   }
@@ -56,8 +57,8 @@ export function renderPet(species: number | null, stage: number, mood: number, f
   const feature = species !== null ? P.species[species]?.feature : null;
   if (feature) blit(feature, 16, feature.length, 0, P.featureY[stage] + bob, true);
   blit(P.bodies[stage], 16, 16, 0, bob, true);
-  const rows = P.faces[Math.min(mood, 3)].slice();
-  if (mood !== MOOD.Crying && frame % 8 === 7) rows[0] = P.closedEyes;
+  const rows = P.faces[mood === MOOD.Sleeping ? 4 : Math.min(mood, 3)].slice();
+  if (mood !== MOOD.Crying && mood !== MOOD.Sleeping && frame % 8 === 7) rows[0] = P.closedEyes;
   const [ax, ay] = P.faceAt[stage];
   blit(rows, 8, 4, ax, ay + bob, true);
   return out;

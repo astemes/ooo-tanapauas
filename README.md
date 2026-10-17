@@ -13,11 +13,12 @@ The full two-minute tour is in [`docs/tour/index.html`](docs/tour/index.html): o
 ## How it plays
 
 - **Pick an egg.** A new pet starts as an egg, and you choose its time: 15, 30, 60 or 90 minutes. That time is the goal of every session for this pet. Longer eggs hatch rarer animals.
-- **Dock and start.** Each slot has a microswitch. Press Start (or dock every phone) and a 10-second countdown locks everyone in.
+- **Everyone docks.** It's a team game: each slot has a microswitch, and when every player's phone is in, a 10-second countdown starts the session. No buttons.
 - **Count down.** The timer counts down to the goal while the pet earns XP. The egg hatches into one of 13 animals and grows from Baby to Elder.
 - **Bonus round.** At the goal the box shows *GOAL COMPLETE!*. Finish then, or keep going to double the time for an extra life.
 - **Don't get busted.** Lifting a phone mid-session ends it for everyone: a lost heart, and that player goes on the wall of shame. Lose every heart and the pet dies.
-- **Daily minimum.** Each player has a daily minimum of docked minutes; missing it costs a heart too.
+- **Win or lose together.** The team has a daily minimum of docked minutes; missing it costs one heart.
+- **Sleep at night.** From 22:00 to 07:00 the pet sleeps and no session runs. The phones should be away anyway.
 - **You decide when a new pet starts:** after a pet dies, or any time between sessions with *New pet*.
 
 The rules, numbers and odds are in [docs/game-design.md](docs/game-design.md).

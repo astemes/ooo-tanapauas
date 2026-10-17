@@ -26,6 +26,7 @@ constexpr int kPetPx = kSpriteSize * kScale;    // 288: fills the left column
 constexpr int kPetX = (340 - kPetPx) / 2, kPetY = 76;
 constexpr int kHeartScale = 4;
 constexpr int kHeartPx = kHeartSize * kHeartScale;
+constexpr int kHappyX = 520;  // header: hearts end just left of "Happy 72%", then "XP"
 constexpr int kQrPx = 340;
 constexpr uint32_t kBg = 0x1E1B24;
 constexpr uint32_t kPanel = 0x2A2632;
@@ -74,6 +75,14 @@ lv_obj_t* idle_title;
 lv_obj_t* idle_sub;
 lv_obj_t* egg_matrix;
 lv_obj_t* egg_odds;
+lv_obj_t* goal_view;  // the locked egg's goal, stat chips and a tip
+lv_obj_t* goal_big;
+lv_obj_t* goal_bonus;
+lv_obj_t* evolve_value;
+lv_obj_t* streak_value;
+lv_obj_t* tip_label;
+lv_obj_t* start_hint;  // docking every phone starts the countdown; no Start button
+lv_obj_t* zz_label;    // over the pet while it sleeps
 int drawn_egg = -1;
 lv_obj_t* new_pet_label;
 bool new_pet_armed = false;  // "New pet" needs a second tap
@@ -199,13 +208,6 @@ int index_of(const uint16_t* values, int n, uint16_t v, int fallback) {
 
 // ---- callbacks ----------------------------------------------------------------
 
-void on_start(lv_event_t*) {
-  buzzer::click();
-  if (!g->start(millis())) {
-    set_text(message_label, "Dock at least one phone first.");
-    message_until = millis() + 4000;
-  }
-}
 void on_cancel(lv_event_t*) { buzzer::click(); g->cancel(); }
 void on_emergency(lv_event_t*) { buzzer::click(); g->request_emergency(millis()); }
 void on_finish(lv_event_t*) { buzzer::click(); g->finish(millis()); }
@@ -295,14 +297,14 @@ void build_header(lv_obj_t* scr) {
   for (int i = 0; i < kMaxBonusHearts; i++) {
     heart_canvas[i] = lv_canvas_create(scr);
     lv_canvas_set_buffer(heart_canvas[i], heart_buf[i], kHeartPx, kHeartPx, LV_IMG_CF_TRUE_COLOR);
-    lv_obj_set_pos(heart_canvas[i], 290 + i * 36, 20);
+    lv_obj_set_pos(heart_canvas[i], kHappyX, 20);  // placed right-aligned in refresh_pet
   }
 
   // Plain numbers here; the companion app has the progress bars.
   happy_label = make_label(scr, &lv_font_montserrat_20, "");
-  lv_obj_set_pos(happy_label, 490, 24);
+  lv_obj_set_pos(happy_label, kHappyX, 24);
   xp_label = make_label(scr, &lv_font_montserrat_20, "");
-  lv_obj_set_pos(xp_label, 630, 24);
+  lv_obj_set_pos(xp_label, kHappyX + 130, 24);
 }
 
 void build_left(lv_obj_t* scr) {
@@ -313,6 +315,10 @@ void build_left(lv_obj_t* scr) {
   // Bottom-right corner, next to the slot row.
   qr_btn = make_button(scr, "Link phone", on_qr_open, 0x2F6FB0, &qr_btn_label, 146, 64);
   lv_obj_set_pos(qr_btn, 630, 400);
+
+  zz_label = make_label(scr, &lv_font_montserrat_28, "");
+  lv_obj_set_style_text_color(zz_label, lv_color_hex(kBonusGold), 0);
+  lv_obj_set_pos(zz_label, kPetX + kPetPx - 70, kPetY + 4);
 
   // One line under the pet, only for status (offline, flash problems) and hints.
   message_label = make_label(scr, &lv_font_montserrat_14, "");
@@ -336,14 +342,54 @@ void build_idle() {
   lv_obj_set_style_text_color(egg_odds, lv_color_hex(kBonusGold), 0);
   lv_obj_align(egg_odds, LV_ALIGN_TOP_LEFT, 0, 132);
 
-  shame_label = make_label(idle_panel, &lv_font_montserrat_20, "");
+  // After the first session: the goal, two stat chips and a tip (or the shame).
+  goal_view = lv_obj_create(idle_panel);
+  lv_obj_remove_style_all(goal_view);
+  lv_obj_set_size(goal_view, 400, 192);
+  lv_obj_clear_flag(goal_view, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t* caption = make_label(goal_view, &lv_font_montserrat_14, "NEXT SESSION");
+  lv_obj_set_style_text_color(caption, lv_color_hex(kMuted), 0);
+  lv_obj_set_style_text_letter_space(caption, 2, 0);
+  goal_big = make_label(goal_view, &lv_font_montserrat_48, "");
+  lv_obj_set_pos(goal_big, 0, 18);
+  goal_bonus = make_label(goal_view, &lv_font_montserrat_20, "");
+  lv_obj_set_style_text_color(goal_bonus, lv_color_hex(kBonusGold), 0);
+  lv_obj_set_style_text_align(goal_bonus, LV_TEXT_ALIGN_RIGHT, 0);
+  lv_obj_align(goal_bonus, LV_ALIGN_TOP_RIGHT, 0, 22);
+  auto chip = [](int x, const char* title, lv_obj_t** value) {
+    lv_obj_t* c = lv_obj_create(goal_view);
+    lv_obj_remove_style_all(c);
+    lv_obj_set_size(c, 195, 64);
+    lv_obj_set_pos(c, x, 84);
+    set_bg(c, kSlotEmpty);
+    lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(c, 12, 0);
+    lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t* t = make_label(c, &lv_font_montserrat_14, title);
+    lv_obj_set_style_text_color(t, lv_color_hex(kMuted), 0);
+    lv_obj_set_pos(t, 12, 8);
+    *value = make_label(c, &lv_font_montserrat_20, "");
+    lv_obj_set_width(*value, 175);
+    lv_label_set_long_mode(*value, LV_LABEL_LONG_DOT);
+    lv_obj_set_pos(*value, 12, 30);
+  };
+  chip(0, "Next stage", &evolve_value);
+  chip(205, "Win streak", &streak_value);
+  tip_label = make_label(goal_view, &lv_font_montserrat_14, "");
+  lv_obj_set_style_text_color(tip_label, lv_color_hex(kMuted), 0);
+  lv_label_set_long_mode(tip_label, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(tip_label, 400);
+  lv_obj_set_pos(tip_label, 0, 160);
+  shame_label = make_label(goal_view, &lv_font_montserrat_14, "");
   lv_obj_set_style_text_color(shame_label, lv_color_hex(kShameRed), 0);
   lv_label_set_long_mode(shame_label, LV_LABEL_LONG_WRAP);
   lv_obj_set_width(shame_label, 400);
-  lv_obj_align(shame_label, LV_ALIGN_TOP_LEFT, 0, 76);
+  lv_obj_set_pos(shame_label, 0, 160);
 
-  lv_obj_t* start = make_button(idle_panel, "Start", on_start, 0x3E9B3A);
-  lv_obj_align(start, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+  start_hint = make_label(idle_panel, &lv_font_montserrat_20, "");
+  lv_label_set_long_mode(start_hint, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(start_hint, 200);
+  lv_obj_align(start_hint, LV_ALIGN_BOTTOM_LEFT, 0, -8);
   lv_obj_t* stats = make_button(idle_panel, "Stats", on_stats, 0x5A5560);
   lv_obj_align(stats, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
 }
@@ -354,7 +400,7 @@ void build_arming() {
   lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 10);
   arming_count = make_label(arming_panel, &lv_font_montserrat_48, "10");
   lv_obj_align(arming_count, LV_ALIGN_CENTER, 0, -20);
-  lv_obj_t* hint = make_label(arming_panel, &lv_font_montserrat_14, "Late? Dock your phone now to join.");
+  lv_obj_t* hint = make_label(arming_panel, &lv_font_montserrat_14, "Everyone's in. Keep them docked!");
   lv_obj_align(hint, LV_ALIGN_CENTER, 0, 30);
   lv_obj_t* cancel = make_button(arming_panel, "Cancel", on_cancel, 0x5A5560);
   lv_obj_align(cancel, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -536,13 +582,19 @@ void refresh_pet(uint32_t now_ms) {
     drawn_frame = frame;
     drawn_species = pet.species;
   }
+  // A slow "z Z" over the sleeping pet.
+  set_text(zz_label, g->mood() != Mood::Sleeping ? "" : (frame / 2) % 2 ? "Z z" : "z Z");
   if (pet.hearts != drawn_hearts) {
     for (int i = 0; i < kMaxBonusHearts; i++) {
       HeartSprite h;
       render_heart(i < pet.hearts, h);
       fill_scaled(&h[0][0], kHeartSize, kHeartScale, pet.species, pet.stage, heart_buf[i], i >= kMaxHearts ? kBonusGold : 0);
       lv_obj_invalidate(heart_canvas[i]);
-      set_hidden(heart_canvas[i], i >= kMaxHearts && i >= pet.hearts);  // bonus slots only when earned
+      bool shown = i < kMaxHearts || i < pet.hearts;  // bonus slots only when earned
+      set_hidden(heart_canvas[i], !shown);
+      // Right-aligned so the row ends just before "Happy", clear of the title.
+      int count = pet.hearts > kMaxHearts ? pet.hearts : kMaxHearts;
+      lv_obj_set_pos(heart_canvas[i], kHappyX - 12 - (count - i) * 36, 20);
     }
     drawn_hearts = pet.hearts;
   }
@@ -552,10 +604,10 @@ void refresh_header() {
   const Pet& pet = g->data().pet;
   char buf[64];
   if (pet.species < kSpeciesCount)
-    std::snprintf(buf, sizeof buf, "%s %s  -  gen %u", species_name(pet.species), stage_name(pet.stage),
+    std::snprintf(buf, sizeof buf, "%s %s - gen %u", species_name(pet.species), stage_name(pet.stage),
                   pet.generation);
   else
-    std::snprintf(buf, sizeof buf, "%s  -  gen %u", stage_name(pet.stage), pet.generation);
+    std::snprintf(buf, sizeof buf, "%s - gen %u", stage_name(pet.stage), pet.generation);
   set_text(title_label, buf);
   std::snprintf(buf, sizeof buf, "Happy %u%%", pet.happiness);
   set_text(happy_label, buf);
@@ -662,7 +714,9 @@ void refresh_panels(uint32_t now_ms) {
       uint16_t egg = g->target_minutes();
       set_hidden(egg_matrix, !picking);
       set_hidden(egg_odds, !picking);
-      set_hidden(shame_label, picking);
+      set_hidden(idle_title, !picking);
+      set_hidden(idle_sub, !picking);
+      set_hidden(goal_view, picking);
       if (picking) {
         set_text(idle_title, "Pick an egg");
         set_text(idle_sub, "Longer sessions hatch rarer pets.");
@@ -674,20 +728,63 @@ void refresh_panels(uint32_t now_ms) {
         std::snprintf(buf, sizeof buf, "%u-min sessions  -  %d%% chance of a rare pet", egg, egg_rare_percent(egg));
         set_text(egg_odds, buf);
       } else {
-        std::snprintf(buf, sizeof buf, "Goal: %u min", egg);
-        set_text(idle_title, buf);
-        std::snprintf(buf, sizeof buf, "Set by this egg. Bonus life at %u min.", static_cast<unsigned>(g->bonus_goal_minutes()));
-        set_text(idle_sub, egg ? buf : "Free play");
+        const Pet& pet = g->data().pet;
+        if (egg) std::snprintf(buf, sizeof buf, "%u min", egg);
+        else std::snprintf(buf, sizeof buf, "Free play");
+        set_text(goal_big, buf);
+        std::snprintf(buf, sizeof buf, "Bonus life\nat %u min", static_cast<unsigned>(g->bonus_goal_minutes()));
+        set_text(goal_bonus, buf);
+        // How long until it evolves, with every player docked.
+        uint32_t next = next_stage_xp(pet.stage);
+        if (!next) {
+          set_text(evolve_value, "Fully grown");
+        } else {
+          uint32_t xpm = xp_per_minute(g->num_players());
+          uint32_t mins = (next - pet.xp + xpm - 1) / xpm;
+          Stage to = static_cast<Stage>(static_cast<int>(pet.stage) + 1);
+          char when[16];
+          if (mins >= 120) std::snprintf(when, sizeof when, "~%lu h", (unsigned long)((mins + 30) / 60));
+          else std::snprintf(when, sizeof when, "~%lu min", (unsigned long)mins);
+          if (pet.stage == Stage::Egg) std::snprintf(buf, sizeof buf, "Hatches in %s", when);
+          else std::snprintf(buf, sizeof buf, "%s in %s", stage_name(to), when);
+          set_text(evolve_value, buf);
+        }
+        uint16_t streak = g->data().life.streak;
+        if (streak) std::snprintf(buf, sizeof buf, "%u in a row", streak);
+        else std::snprintf(buf, sizeof buf, "Start one!");
+        set_text(streak_value, buf);
+        static const char* const kTips[] = {
+            "Phones down, pets up!",
+            "Your pet can't scroll. Neither should you.",
+            "Every docked minute is pet food.",
+            "Look up. Someone's right there.",
+            "Boredom is where good ideas hatch.",
+            "The feed can wait. The pet can't.",
+        };
+        set_text(tip_label, kTips[(millis() / 8000) % (sizeof kTips / sizeof kTips[0])]);
+      }
+      // Docking every phone starts the countdown; say how far along the team is.
+      int docked = 0, players = g->num_players();
+      for (uint8_t m = g->docked_mask(); m; m &= m - 1) docked++;
+      if (g->is_night()) std::snprintf(buf, sizeof buf, "Sleeping until %02u:00", kNightEndHour);
+      else if (docked == 0) std::snprintf(buf, sizeof buf, "Dock every phone to start");
+      else std::snprintf(buf, sizeof buf, "%d of %d phones docked", docked, players);
+      set_text(start_hint, buf);
+      lv_obj_set_style_text_color(start_hint, lv_color_hex(docked && !g->is_night() ? kGoalGreen : kMuted), 0);
+      if (g->is_night() && !picking) {
+        std::snprintf(buf, sizeof buf, "The pet is asleep until %02u:00. The phones can rest too.", kNightEndHour);
+        set_text(tip_label, buf);
       }
       if (new_pet_armed && millis() - new_pet_armed_at > 4000) new_pet_armed = false;
       set_text(new_pet_label, new_pet_armed ? "Sure?" : "New pet");
       char shame[96];
-      if (describe_shame(*g, shame, sizeof shame)) {
+      bool shamed = describe_shame(*g, shame, sizeof shame);
+      if (shamed) {
         std::snprintf(buf, sizeof buf, "Wall of shame: %s", shame);
         set_text(shame_label, buf);
-      } else {
-        set_text(shame_label, "");
       }
+      set_hidden(shame_label, !shamed);  // the shame replaces the tip
+      set_hidden(tip_label, shamed);
       if (stats_open) {
         const SaveData& d = g->data();
         const Lifetime& l = d.life;
