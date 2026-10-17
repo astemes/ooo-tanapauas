@@ -6,3 +6,4 @@ firmware/.vscode/
 .vite/
 app/node_modules/
 app/dist/
+.claude/
