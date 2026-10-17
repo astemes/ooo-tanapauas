@@ -11,7 +11,8 @@ enum class Stage : uint8_t { Egg = 0, Baby, Child, Teen, Adult, Elder, Count };
 enum class Mood : uint8_t { Happy, Content, Sad, Crying, Dead };
 
 // ---- Tuning -------------------------------------------------------------
-constexpr uint8_t kMaxHearts = 3;
+constexpr uint8_t kMaxHearts = 3;       // successful sessions heal up to this
+constexpr uint8_t kMaxBonusHearts = 5;  // bonus lives can bank above it
 constexpr uint8_t kMaxHappiness = 100;
 constexpr uint8_t kStartHappiness = 60;
 constexpr uint8_t kBreakHappinessLoss = 35;
@@ -24,12 +25,24 @@ constexpr uint8_t kCompletionBonusPercent = 20;
 constexpr uint32_t kStageXp[] = {0, 30, 150, 500, 1500, 4000};
 
 struct Pet {
+  uint8_t species = 0xFF;  // see species.h; kNoSpecies until the egg hatches
+  // The egg's time setting: every session's goal for this pet, and the odds
+  // of a rare hatch (species.h kEggs). 0 = free play (tests, simulator).
+  uint16_t egg_minutes = 30;
   uint32_t xp = 0;
   Stage stage = Stage::Egg;
   uint8_t hearts = kMaxHearts;
   uint8_t happiness = kStartHappiness;
   uint16_t generation = 1;
   uint32_t minutes = 0;  // minutes this pet has lived through in sessions
+};
+
+enum class ShameReason : uint8_t { None, Lift, MissedDaily, PowerCut };
+
+struct Shame {
+  uint8_t slot = kNoSlot;
+  ShameReason reason = ShameReason::None;
+  uint32_t unix = 0;  // 0 = time unknown
 };
 
 // Stats that survive a pet's death.
@@ -41,8 +54,14 @@ struct Lifetime {
   uint16_t streak = 0;
   uint16_t best_streak = 0;
   uint16_t graveyard = 0;
-  uint16_t breaks[kMaxSlots] = {};  // shame leaderboard
-  uint32_t last_seen_unix = 0;      // 0 = unknown wall-clock time
+  uint16_t breaks[kMaxSlots] = {};       // phones picked up mid-session
+  uint16_t missed_days[kMaxSlots] = {};  // daily minimum not met
+  uint16_t daily_streak[kMaxSlots] = {};  // consecutive days meeting the minimum
+  uint16_t best_daily_streak[kMaxSlots] = {};
+  uint16_t perfect_days = 0;  // days where every player met the minimum
+  uint16_t bonus_lives = 0;
+  Shame shame;                // most recent shaming, shown until the next success
+  uint32_t last_seen_unix = 0;  // 0 = unknown wall-clock time
 };
 
 const char* stage_name(Stage s);
@@ -58,6 +77,9 @@ bool pet_add_xp(Pet& pet, uint32_t xp);
 void pet_on_success(Pet& pet, uint32_t minutes);
 // Returns true if the pet died.
 bool pet_on_break(Pet& pet);
+// Bonus life from a full-group hour; banks above kMaxHearts up to kMaxBonusHearts.
+bool pet_add_bonus_heart(Pet& pet);
+// Fresh egg; keeps the previous egg's time setting as the default.
 void pet_hatch_new(Pet& pet, uint16_t generation);
 void pet_apply_absence(Pet& pet, uint32_t days);
 Mood pet_mood(const Pet& pet);

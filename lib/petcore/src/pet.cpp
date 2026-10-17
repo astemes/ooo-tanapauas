@@ -60,9 +60,17 @@ bool pet_on_break(Pet& pet) {
   return pet.hearts == 0;
 }
 
+bool pet_add_bonus_heart(Pet& pet) {
+  if (pet.hearts == 0 || pet.hearts >= kMaxBonusHearts) return false;
+  pet.hearts++;
+  return true;
+}
+
 void pet_hatch_new(Pet& pet, uint16_t generation) {
+  uint16_t egg_minutes = pet.egg_minutes;
   pet = Pet{};
   pet.generation = generation;
+  pet.egg_minutes = egg_minutes;
 }
 
 void pet_apply_absence(Pet& pet, uint32_t days) {

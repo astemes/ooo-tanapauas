@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phone Jail Pet</title>
+<style>
+  body { margin: 0; padding: 24px 16px; background: #1E1B24; color: #F4F2F7; font: 16px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 24px; margin: 0 0 8px; }
+  p { color: #A7A1B2; max-width: 40ch; }
+  pre { background: #2A2632; padding: 12px; border-radius: 10px; overflow-x: auto; font-size: 13px; }
+</style>
+<h1>Phone Jail Pet</h1>
+<p>The box is online, but the companion app hasn't been built into this firmware yet. Here's the raw state from the box:</p>
+<pre id="state">Loading…</pre>
+<script>
+  const show = () => fetch("/api/state").then(r => r.json())
+    .then(s => { document.getElementById("state").textContent = JSON.stringify(s, null, 2); })
+    .catch(e => { document.getElementById("state").textContent = "Couldn't reach the box: " + e; });
+  show();
+  setInterval(show, 5000);
+</script>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "petbox-app",
+  "private": true,
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "export": "python3 scripts/export-petcore.py",
+    "dev": "vite",
+    "build": "python3 scripts/export-petcore.py && node scripts/make-icon.mjs && tsc --noEmit && vite build && node scripts/size.mjs",
+    "preview": "vite preview",
+    "mock": "node mock/server.mjs",
+    "icon": "node scripts/make-icon.mjs"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21",
+    "vite-plugin-singlefile": "^2.3.3"
+  },
+  "dependencies": {
+    "preact": "^10.29.8"
+  }
+}

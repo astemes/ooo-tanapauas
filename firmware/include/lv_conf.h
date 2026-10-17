@@ -31,6 +31,7 @@
 #define LV_FONT_DEFAULT &lv_font_montserrat_20
 
 #define LV_USE_CANVAS 1
+#define LV_USE_QRCODE 1
 #define LV_USE_LOG 0
 
 #endif  // LV_CONF_H

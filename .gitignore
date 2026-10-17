@@ -3,3 +3,6 @@ build/
 firmware/.pio/
 firmware/.vscode/
 .DS_Store
+.vite/
+app/node_modules/
+app/dist/

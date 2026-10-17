@@ -78,8 +78,8 @@ void set_colour(bool fg, uint32_t rgb) {
   std::printf("\x1b[%d;2;%u;%u;%um", fg ? 38 : 48, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
 }
 
-uint32_t px_colour(Stage stage, uint8_t idx) {
-  return idx == kTransparent ? kBackground : palette_rgb(stage, idx);
+uint32_t px_colour(uint8_t species, Stage stage, uint8_t idx) {
+  return idx == kTransparent ? kBackground : palette_rgb(species, stage, idx);
 }
 
 std::string clock_text(uint32_t ms) {
@@ -89,13 +89,23 @@ std::string clock_text(uint32_t ms) {
   return buf;
 }
 
-void draw(const Game& g, uint32_t now, uint32_t frame, uint32_t warp, const std::string& msg) {
+const uint16_t kDailyOptions[] = {15, 30, 45, 60, 0};
+
+std::string bar(unsigned value, unsigned max, int width) {
+  int filled = max ? static_cast<int>(width * (value > max ? max : value) / max) : width;
+  return std::string(filled, '#') + std::string(width - filled, '.');
+}
+
+void draw(const Game& g, uint32_t now, uint32_t frame, uint32_t warp, const std::string& msg,
+          const Settings& draft) {
   const SaveData& d = g.data();
   std::printf("\x1b[H\x1b[0m");
 
-  std::printf(" PHONE JAIL PET   Gen %u %-6s  ", d.pet.generation, stage_name(d.pet.stage));
-  for (int i = 0; i < kMaxHearts; i++) {
-    set_colour(true, i < d.pet.hearts ? 0xFF4D6D : 0x5A5560);
+  std::printf(" PHONE JAIL PET   Gen %u %-7s %-6s  ", d.pet.generation, species_name(d.pet.species),
+              stage_name(d.pet.stage));
+  for (int i = 0; i < kMaxBonusHearts; i++) {
+    if (i >= kMaxHearts && i >= d.pet.hearts) break;  // bonus hearts only show when earned
+    set_colour(true, i < d.pet.hearts ? (i < kMaxHearts ? 0xFF4D6D : 0xFFC94D) : 0x5A5560);
     std::printf("♥ ");
   }
   std::printf("\x1b[0m  Happy %3u%%  XP %u", d.pet.happiness, d.pet.xp);
@@ -104,12 +114,12 @@ void draw(const Game& g, uint32_t now, uint32_t frame, uint32_t warp, const std:
   std::printf("\x1b[K\n\n");
 
   Sprite sp;
-  render_pet(d.pet.stage, g.mood(), frame, sp);
+  render_pet(d.pet.species, d.pet.stage, g.mood(), frame, sp);
   for (int y = 0; y < kSpriteSize; y += 2) {
     std::printf("      ");
     for (int x = 0; x < kSpriteSize; x++) {
-      set_colour(true, px_colour(d.pet.stage, sp[y][x]));
-      set_colour(false, px_colour(d.pet.stage, sp[y + 1][x]));
+      set_colour(true, px_colour(d.pet.species, d.pet.stage, sp[y][x]));
+      set_colour(false, px_colour(d.pet.species, d.pet.stage, sp[y + 1][x]));
       std::printf("▀▀");
     }
     std::printf("\x1b[0m\x1b[K\n");
@@ -117,6 +127,10 @@ void draw(const Game& g, uint32_t now, uint32_t frame, uint32_t warp, const std:
   std::printf("\n");
 
   switch (g.state()) {
+    case State::Setup:
+      std::printf(" SETUP  players: %u [p]   daily minimum: %s [m]   [enter] to confirm\x1b[K\n", draft.num_players,
+                  draft.daily_minimum_min ? (std::to_string(draft.daily_minimum_min) + " min").c_str() : "off");
+      break;
     case State::Idle:
       std::printf(" IDLE  Dock phones and press [s]. Target: %s\x1b[K\n",
                   g.target_minutes() ? (std::to_string(g.target_minutes()) + " min").c_str() : "free play");
@@ -142,7 +156,7 @@ void draw(const Game& g, uint32_t now, uint32_t frame, uint32_t warp, const std:
   }
 
   std::printf(" Slots: ");
-  for (int s = 0; s < kMaxSlots; s++) {
+  for (int s = 0; s < g.num_players(); s++) {
     uint8_t bit = 1u << s;
     const char* label = "empty ";
     uint32_t colour = 0x8A8494;
@@ -163,12 +177,33 @@ void draw(const Game& g, uint32_t now, uint32_t frame, uint32_t warp, const std:
   std::printf(" %s\x1b[K\n\n", msg.c_str());
 
   const Lifetime& l = d.life;
-  std::printf(" Streak %u (best %u)  Wins %u  Breaks %u  Total %u min  Graves %u\x1b[K\n", l.streak,
-              l.best_streak, l.sessions_success, l.sessions_broken, l.total_minutes, l.graveyard);
-  std::printf(" Shame: P1 %u  P2 %u  P3 %u  P4 %u\x1b[K\n\n", l.breaks[0], l.breaks[1], l.breaks[2],
-              l.breaks[3]);
+  unsigned minimum = d.settings.daily_minimum_min;
+  uint32_t left = g.seconds_until_day_end();
+  std::printf(" Today (day closes in %uh %02um, minimum %u min):\x1b[K\n", left / 3600, (left / 60) % 60, minimum);
+  for (int p = 0; p < g.num_players(); p++) {
+    unsigned m = d.daily.minutes[p];
+    set_colour(true, minimum && m >= minimum ? 0x7ED957 : 0xC9C3D3);
+    std::printf("   %-12s [%s] %3u/%u min  streak %u  lifted %u  missed %u\x1b[K\n", player_name(d.settings, p),
+                bar(m, minimum, 20).c_str(), m, minimum, l.daily_streak[p], l.breaks[p], l.missed_days[p]);
+  }
+  std::printf("\x1b[0m");
+  char shame[96];
+  if (describe_shame(g, shame, sizeof shame)) {
+    set_colour(true, 0xFF4D6D);
+    std::printf(" Wall of shame: %s\x1b[0m\x1b[K\n", shame);
+  } else {
+    std::printf("\x1b[K\n");
+  }
+  if (g.state() == State::Running)
+    std::printf(" Extra life at %u min: %s\x1b[K\n", g.bonus_goal_minutes(),
+                g.bonus_earned() ? "earned!" : g.bonus_available_today() ? "keep going" : "already won today");
+  else
+    std::printf("\x1b[K\n");
+  std::printf(" Streak %u (best %u)  Wins %u  Breaks %u  Perfect days %u  Bonus lives %u  Graves %u\x1b[K\n\n",
+              l.streak, l.best_streak, l.sessions_success, l.sessions_broken, l.perfect_days, l.bonus_lives,
+              l.graveyard);
   std::printf(" [1-4] dock/lift  [s]tart  [c]ancel  [e]mergency  [f]inish  [enter] ok\x1b[K\n");
-  std::printf(" [t]arget  [w]arp x%u  [r]eset pet  [q]uit\x1b[K\n", warp);
+  std::printf(" [t]arget  [w]arp x%u  [n]ext day  [r]eset pet  [q]uit\x1b[K\n", warp);
   std::fflush(stdout);
 }
 
@@ -190,6 +225,15 @@ int main() {
   Game game;
   game.begin(saved, static_cast<uint32_t>(game_ms), static_cast<uint32_t>(std::time(nullptr)));
 
+  Settings draft = game.data().settings;
+  {
+    std::time_t t = std::time(nullptr);
+    std::tm local{};
+    localtime_r(&t, &local);
+    draft.tz_offset_min = static_cast<int16_t>(local.tm_gmtoff / 60);
+  }
+  int daily_idx = 1;
+
   enable_raw();
   std::printf("\x1b[2J\x1b[?25l");
   bool running = true;
@@ -207,7 +251,14 @@ int main() {
         running = false;
         break;
       }
+      if (game.state() == State::Setup) {
+        if (key == 'p') draft.num_players = draft.num_players % kMaxSlots + 1;
+        else if (key == 'm') draft.daily_minimum_min = kDailyOptions[daily_idx = (daily_idx + 1) % 5];
+        else if (key == '\n' || key == '\r' || key == ' ') game.complete_setup(draft);
+        continue;
+      }
       if (key >= '1' && key <= '4') docked ^= 1u << (key - '1');
+      else if (key == 'n') unix_offset += 86400;
       else if (key == 's' && !game.start(ms)) msg = "Dock at least one phone first.";
       else if (key == 'c') game.cancel();
       else if (key == 'e') game.request_emergency(ms);
@@ -216,22 +267,23 @@ int main() {
       else if (key == 'w') warp_idx = (warp_idx + 1) % 3;
       else if (key == 't' && game.state() == State::Idle) {
         target_idx = (target_idx + 1) % 5;
-        game.set_target_minutes(kTargets[target_idx]);
+        if (!game.choose_egg(kTargets[target_idx])) msg = "The egg's time is set until this pet is gone.";
       } else if (key == 'r' && game.state() == State::Idle) {
         game.begin(SaveData{}, ms, unix_now);
         store(game.data());
-        msg = "Pet reset.";
+        draft.num_players = kMaxSlots;
+        msg = "Pet reset. Set up the players.";
       }
     }
 
     game.update(ms, docked, unix_now);
-    char text[96];
+    char text[128];
     for (Event e; game.poll_event(e);)
       if (describe_event(e, game, text, sizeof text)) msg = text;
     if (game.take_dirty()) store(game.data());
 
     uint32_t frame = static_cast<uint32_t>(std::chrono::duration<double>(now - t0).count() * 2);
-    draw(game, ms, frame, kWarps[warp_idx], msg);
+    draw(game, ms, frame, kWarps[warp_idx], msg, draft);
     usleep(50000);
   }
   store(game.data());

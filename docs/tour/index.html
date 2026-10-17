@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Phone-Free Pet Box</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Montserrat:wght@400;600;700;800&display=swap">
+<style>
+  /* Layout: one 16:9 stage (the box's own world, drawn on canvas), caption and transport below.
+     Deliberately single-theme: the box screen is always dark. */
+  :root {
+    --night: #17141c;     /* page ground, a shade under the box screen */
+    --screen: #1e1b24;    /* the GIGA display background */
+    --panel: #2a2632;
+    --ink: #f4f1e8;
+    --muted: #a7a1b2;
+    --teal: #26c6b5;
+    --gold: #ffc94d;
+    --display: "Silkscreen", "Courier New", monospace;
+    --body: "Montserrat", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  body { background: var(--night); color: var(--ink); font-family: var(--body); }
+  .wrap {
+    max-width: 1100px; margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 20px 32px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(18px, 3vw, 26px); margin: 0; letter-spacing: 0.02em; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  .stage {
+    width: 100%; max-width: 100%; aspect-ratio: 16 / 9; display: block; border-radius: 14px;
+    background: var(--screen); box-shadow: 0 0 0 2px #2f2a38, 0 18px 50px rgba(0, 0, 0, 0.45);
+  }
+  .caption { display: flex; flex-direction: column; gap: 4px; min-height: 64px; }
+  .caption b { font-family: var(--display); font-weight: 400; font-size: 15px; color: var(--teal); letter-spacing: 0.04em; }
+  .caption span { font-size: 15px; line-height: 1.45; max-width: 68ch; }
+  .transport { display: flex; align-items: center; gap: 12px; }
+  .transport button {
+    font: 600 14px var(--body); color: var(--ink); background: var(--panel); border: 2px solid #3a3544;
+    border-radius: 10px; padding: 8px 14px; cursor: pointer; min-width: 84px;
+  }
+  .transport button:focus-visible, .seg:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .time { font: 600 13px var(--body); color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; }
+  .timeline { display: flex; gap: 4px; }
+  .seg {
+    flex: var(--len) 1 0; min-width: 0; background: none; border: 0; padding: 6px 0 0; cursor: pointer;
+    display: flex; flex-direction: column; gap: 6px; text-align: left; color: var(--muted);
+  }
+  .seg i { display: block; height: 6px; border-radius: 3px; background: #3a3544; position: relative; overflow: hidden; }
+  .seg i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--fill, 0%); background: var(--teal); }
+  .seg span { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seg.on span { color: var(--ink); }
+  @media (max-width: 600px) { .seg span { display: none; } }
+  .player { display: flex; flex-direction: column; gap: 14px; }
+  /* Fullscreen: the stage fills the screen, with the caption and controls below it. */
+  .player:fullscreen {
+    background: #000; justify-content: center; align-items: center; gap: 10px;
+    padding: max(12px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px))
+      max(12px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  }
+  /* Fullscreen shows only the scene and the progress bar; Space, F and Esc still work. */
+  .player:fullscreen .stage, .player:fullscreen .timeline { width: min(100%, calc((100vh - 48px) * 16 / 9)); }
+  .player:fullscreen .stage { border-radius: 0; box-shadow: none; }
+  .player:fullscreen .caption, .player:fullscreen .transport, .player:fullscreen .seg span { display: none; }
+  .note { font-size: 13px; color: var(--muted); }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Phone-Free Pet Box</h1>
+    <p>A two-minute tour &middot; drawn with the box&rsquo;s own sprites</p>
+  </header>
+  <div class="player" id="player">
+  <canvas class="stage" id="stage" width="1280" height="720" aria-label="Animated tour of the pet box"></canvas>
+  <div class="caption" aria-live="polite"><b id="capTitle"></b><span id="capText"></span></div>
+  <div class="timeline" id="timeline"></div>
+  <div class="transport">
+    <button id="play" type="button">Pause</button>
+    <button id="restart" type="button">Restart</button>
+    <button id="full" type="button">Fullscreen</button>
+    <span class="time" id="time">0:00 / 2:00</span>
+  </div>
+  </div>
+</div>
+
+<script>
+const P = {"bodies":[["................","......####......",".....#wwww#.....","....#wwwwww#....","...#wwaawwww#...","...#wwwwwwww#...","..#wwwwwwaaww#..","..#wwwwwwaaww#..","..#waawwwwwww#..","..#waawwwwwww#..","..#wwwwwwwwww#..","...#wwwwwwww#...","...#swwwwwws#...","....#ssssss#....",".....######.....","................"],["................","................","................","................","................","......####......","....##oooo##....","...#oooooooo#...","..#oooooooooo#..","..#oooooooooo#..","..#oooooooooo#..","..#oooooooooo#..","..#soooooooos#..","...#ssssssss#...","....########....","................"],["................","................","................",".....######.....","...##oooooo##...","..#oooooooooo#..",".#oooooooooooo#.",".#oooooooooooo#.",".#oooooooooooo#.",".#oooooooooooo#.",".#oooooooooooo#.",".#soooooooooos#.","..#ssssssssss#..","...#oo####oo#...","...#ss#..#ss#...","....##....##...."],["................","................","................","....########....","...#oooooooo#...","..#oooooooooo#..","..#oooooooooo#..","..#oooooooooo#..","..#oooooooooo#..",".##oooooooooo##.","#oo#oooooooo#oo#",".##soooooooos##.","...#ssssssss#...","...#oo#..#oo#...","...#ss#..#ss#...","....##....##...."],["................","................","................",".....######.....","...##oooooo##...","..#oooooooooo#..",".#oooooooooooo#.",".#oooooooooooo#.",".#oooooooooooo#.",".#oooooooooooo#.","#oooowwwwwwoooo#","#ooowwwwwwwwooo#",".#soowwwwwwoos#.","..#ssssssssss#..","..#oo#....#oo#..","..####....####.."],["................","................","................",".....######.....","...##oooooo##...","..#oooooooooo#..",".#oooooooooooo#.",".#oooooooooooo#.",".#oooooooooooo#.",".#owwwwwwwwwwo#.","#oowwwwwwwwwwoo#","#oooowwwwwwoooo#",".#sooowwwwooos#.","..#ssssssssss#..","..#oo#....#oo#..","..####....####.."]],"tombstone":["................","................",".....######.....","....#ssssss#....","...#sss##sss#...","...#s######s#...","...#sss##sss#...","...#sss##sss#...","...#ssssssss#...","...#ssssssss#...","...#ssssssss#...","...#ssssssss#...",".aa##########aa.","aaaaaaaaaaaaaaaa","................","................"],"faces":[[".#....#.","p......p","..#..#..","...##..."],[".#....#.","p......p","...##...","........"],[".#....#.","........","...##...","..#..#.."],["##....##",".t....t.",".t.##.t.","..#..#.."]],"closedEyes":"##....##","faceAt":[[0,0],[4,8],[4,6],[4,5],[4,6],[4,6]],"heart":[".##..##.","#xx##xx#","#xxxxxx#","#xxxxxx#",".#xxxx#.","..#xx#..","...##...","........"],"bodyColour":["F4F1E8","FFD84D","7ED957","4DA6FF","FF9A3C","B98CFF"],"palette":{"outline":"2B2233","white":"F7F4EE","cheek":"FF8FA3","tear":"5BC0FF","heartFull":"FF4D6D","heartEmpty":"5A5560","eggShade":"CFC8B8","eggAccent":"8FD3C8"},"featureY":[0,2,0,0,0,0],"species":[{"name":"Blob","rarity":"Common","body":null,"accent":"FFE066","feature":null},{"name":"Chick","rarity":"Common","body":"FFD84D","accent":"FF9A3C","feature":["......#..#......",".....#a##a#.....","......#aa#......","......#aa#......","................","................","................"]},{"name":"Bunny","rarity":"Common","body":"EDE6F2","accent":"FF8FA3","feature":["...##......##...","..#oa#....#ao#..","..#oa#....#ao#..","..#oa#....#ao#..","...#o#....#o#...","................","................"]},{"name":"Frog","rarity":"Common","body":"7ED957","accent":"F7F4EE","feature":["................","...###....###...","..#oao#..#oao#..","..#ooo#..#ooo#..","..#oooo##oooo#..","................","................"]},{"name":"Cat","rarity":"Uncommon","body":"A7A1B2","accent":"FF8FA3","feature":["................","...#........#...","..#a#......#a#..","..#aa#....#aa#..","..#ooo#..#ooo#..","................","................"]},{"name":"Bear","rarity":"Uncommon","body":"B07A45","accent":"E8C090","feature":["................","................","...###....###...","..#oaa#..#aao#..","..#oo#....#oo#..","................","................"]},{"name":"Pig","rarity":"Uncommon","body":"FFA8C0","accent":"E0708F","feature":["................","................","................","..##........##..",".#aa#......#aa#.",".#a#........#a#.","................"]},{"name":"Fox","rarity":"Rare","body":"FF8A3C","accent":"F7F4EE","feature":["..#..........#..","..#o#......#o#..","..#ao#....#oa#..","..#aao#..#oaa#..","..#ooo#..#ooo#..","................","................"]},{"name":"Panda","rarity":"Rare","body":"F4F1E8","accent":"5A5464","feature":["................","................","...###....###...","..#aaa#..#aaa#..","..#aa#....#aa#..","................","................"]},{"name":"Axolotl","rarity":"Rare","body":"FF9FC8","accent":"E0457B","feature":["................","................","a.a..........a.a",".aa#........#aa.","aaa#........#aaa",".a#..........#a.","................"]},{"name":"Deer","rarity":"Rare","body":"C98F5A","accent":"F0DDB8","feature":["..a.a......a.a..","..aaa......aaa..","...a........a...","....aa....aa....","................","................","................"]},{"name":"Dragon","rarity":"Legendary","body":"3FBF8F","accent":"FFC94D","feature":["..#..........#..","..#a#......#a#..","...#a#....#a#...","....#a#..#a#....","................","................","................"]},{"name":"Unicorn","rarity":"Legendary","body":"F1EAFF","accent":"FFC94D","feature":["........#.......",".......#a#......","..#...#aa#...#..","..#o#.#aa#.#o#..","..#oo#....#oo#..","................","................"]}]};
+
+// ---- scenes: [seconds, title, caption] ------------------------------------------
+const SCENES = [
+  [14, "The problem", "We live in an epidemic where attention is being hijacked by phones, social media and screens."],
+  [8, "The idea", "A shared pixel pet that only grows while everyone's phones are docked in the box."],
+  [12, "Pick an egg, dock your phones", "The egg's time is the goal of every session for this pet, and longer eggs hatch rarer pets. Then dock and press Start."],
+  [14, "Count down to the goal", "The timer counts down to the egg's goal while it hatches into a random animal and grows."],
+  [14, "The double-time challenge", "Goal complete! Keep going until double the time and the pet earns an extra life."],
+  [18, "The companion app", "Scan the box's QR code: every player's phone shows the pet, the live timer, the group and a calendar of phone-free days."],
+  [14, "Somebody lifts a phone", "Picking a phone up mid-session ends it for everyone: a lost heart and a spot on the wall of shame."],
+  [10, "Extras", "Each egg hatches into one of 13 animals, and friends can compare their pets and phone-free minutes."],
+  [16, "Put the phone down", "Arduino GIGA R1 WiFi with the Display Shield. The box serves the app over Wi-Fi."],
+];
+const STARTS = [];
+let total = 0;
+for (const s of SCENES) { STARTS.push(total); total += s[0]; }
+
+// ---- pixel pets (port of lib/petcore/src/sprites.cpp) ----------------------------
+const MOOD = { Happy: 0, Content: 1, Sad: 2, Crying: 3, Dead: 4 };
+function renderPet(species, stage, mood, frame) {
+  const out = Array.from({ length: 16 }, () => Array(16).fill("."));
+  const blit = (art, w, h, dx, dy, skip) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const tx = x + dx, ty = y + dy;
+      if (tx < 0 || ty < 0 || tx >= 16 || ty >= 16) continue;
+      const c = art[y][x];
+      if (skip && c === ".") continue;
+      out[ty][tx] = c;
+    }
+  };
+  if (mood === MOOD.Dead) { blit(P.tombstone, 16, 16, 0, 0, false); return out; }
+  if (stage === 0) {
+    const dx = mood === MOOD.Sad ? 0 : frame % 4 === 1 ? -1 : frame % 4 === 3 ? 1 : 0;
+    blit(P.bodies[0], 16, 16, dx, 0, false);
+    return out;
+  }
+  const bob = mood <= 1 ? frame % 2 : frame % 4 === 0 ? 1 : 0;
+  const feat = species !== null ? P.species[species].feature : null;
+  if (feat) blit(feat, 16, feat.length, 0, P.featureY[stage] + bob, true);
+  blit(P.bodies[stage], 16, 16, 0, bob, true);
+  const rows = P.faces[Math.min(mood, 3)].slice();
+  if (mood !== MOOD.Crying && frame % 8 === 7) rows[0] = P.closedEyes;
+  const [ax, ay] = P.faceAt[stage];
+  blit(rows, 8, 4, ax, ay + bob, true);
+  return out;
+}
+function darken(hex) {
+  const v = parseInt(hex, 16), ch = (s) => Math.floor((((v >> s) & 255) * 7) / 10);
+  return ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0");
+}
+function colourFor(species, stage, c) {
+  const sp = P.species[species ?? 0], pal = P.palette, body = sp.body ?? P.bodyColour[stage % 6];
+  switch (c) {
+    case "#": return pal.outline;
+    case "o": return body;
+    case "s": return stage === 0 ? pal.eggShade : darken(body);
+    case "w": return pal.white;
+    case "p": return pal.cheek;
+    case "t": return pal.tear;
+    case "a": return stage === 0 ? pal.eggAccent : sp.accent;
+    default: return null;
+  }
+}
+const petCache = new Map();
+function petPixels(species, stage, mood, frame) {
+  const key = species + "/" + stage + "/" + mood + "/" + (frame % 8);
+  if (!petCache.has(key)) petCache.set(key, renderPet(species, stage, mood, frame).map((r) => r.map((c) => colourFor(species, stage, c))));
+  return petCache.get(key);
+}
+
+// ---- canvas helpers ------------------------------------------------------------
+const cv = document.getElementById("stage");
+const ctx = cv.getContext("2d");
+const W = 1280, H = 720;
+function fitCanvas() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const ease = (t) => { t = clamp(t); return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };
+const back = (t) => { t = clamp(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const span = (t, a, b) => clamp((t - a) / (b - a));
+const pad2 = (n) => String(Math.floor(n)).padStart(2, "0");
+const hms = (s) => { s = Math.max(0, Math.floor(s)); return `${pad2(s / 3600)}:${pad2((s / 60) % 60)}:${pad2(s % 60)}`; };
+
+function rr(x, y, w, h, r, fill, stroke) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+}
+function text(s, x, y, o = {}) {
+  ctx.font = `${o.weight || 400} ${o.size || 16}px ${o.font || "Montserrat, sans-serif"}`;
+  ctx.fillStyle = o.color || "#f4f1e8";
+  ctx.textAlign = o.align || "left";
+  ctx.textBaseline = o.base || "top";
+  ctx.globalAlpha = o.alpha ?? 1;
+  if (o.wrap) {
+    const words = s.split(" "); let line = "", yy = y;
+    for (const w of words) {
+      const test = line ? line + " " + w : w;
+      if (ctx.measureText(test).width > o.wrap && line) { ctx.fillText(line, x, yy); line = w; yy += (o.lh || o.size * 1.3); }
+      else line = test;
+    }
+    ctx.fillText(line, x, yy);
+  } else ctx.fillText(s, x, y);
+  ctx.globalAlpha = 1;
+}
+function sprite(px, x, y, scale, alpha = 1) {
+  ctx.globalAlpha = alpha;
+  for (let r = 0; r < px.length; r++) for (let c = 0; c < px[r].length; c++) {
+    if (!px[r][c]) continue;
+    ctx.fillStyle = "#" + px[r][c];
+    ctx.fillRect(Math.round(x + c * scale), Math.round(y + r * scale), Math.ceil(scale), Math.ceil(scale));
+  }
+  ctx.globalAlpha = 1;
+}
+const pet = (species, stage, mood, frame, x, y, scale, alpha) => sprite(petPixels(species, stage, mood, frame), x, y, scale, alpha);
+const HEART_FILL = { full: P.palette.heartFull, empty: P.palette.heartEmpty, bonus: "FFC94D" };
+const heartPx = (kind) => P.heart.map((r) => [...r].map((c) => (c === "#" ? P.palette.outline : c === "x" ? HEART_FILL[kind] : null)));
+function phone(x, y, w, h, colour, alpha = 1) {
+  ctx.globalAlpha = alpha;
+  rr(x, y, w, h, w * 0.18, "#0f0d13", colour);
+  rr(x + w * 0.1, y + h * 0.08, w * 0.8, h * 0.78, w * 0.08, colour);
+  ctx.globalAlpha = 1;
+}
+
+// ---- the box screen (800x480, same layout as firmware/src/ui/ui.cpp) ----------------
+const SX = 240, SY = 140;
+const NAMES = ["Anna", "Ben", "Cleo", "Dan"];
+const C = { bg: "#1e1b24", panel: "#2a2632", muted: "#a7a1b2", empty: "#3a3542", docked: "#2f6fb0", locked: "#3e9b3a", lift: "#d6334f", gold: "#ffc94d", green: "#7ed957", teal: "#009688" };
+
+function bar(x, y, w, h, v, colour) {
+  rr(x, y, w, h, h / 2, "#3a3542");
+  if (v > 0) rr(x, y, Math.max(h, w * clamp(v)), h, h / 2, colour);
+}
+// The bonus round: a pulsing gold fill drawn over the full green goal bar.
+function glowBar(x, y, w, h, v, T) {
+  if (v <= 0) return;
+  ctx.save();
+  ctx.shadowColor = "#ffc94d";
+  ctx.shadowBlur = 10 + 10 * (0.5 + 0.5 * Math.sin(T * 4));
+  rr(x, y, Math.max(h, w * clamp(v)), h, h / 2, "#ffc94d");
+  ctx.restore();
+}
+function button(x, y, w, h, label, colour, o = {}) {
+  rr(x, y, w, h, 10, colour);
+  if (o.press) rr(x, y, w, h, 10, "rgba(255,255,255," + 0.35 * o.press + ")");
+  text(label, x + w / 2, y + h / 2, { size: 20, weight: 600, align: "center", base: "middle", alpha: o.alpha ?? 1 });
+}
+function boxFrame() {
+  // Bezel and the GIGA display behind the screen.
+  rr(SX - 34, SY - 34, 868, 548, 26, "#0f0d13", "#2f2a38");
+  rr(SX, SY, 800, 480, 4, C.bg);
+  text("GIGA DISPLAY SHIELD", SX + 400, SY + 492, { size: 11, align: "center", font: "Silkscreen", color: "#4a4553" });
+}
+function header(st) {
+  text(st.title, 24, 20, { size: 28, weight: 600 });
+  for (let i = 0; i < 5; i++) {
+    const kind = i < st.hearts ? (i >= 3 ? "bonus" : "full") : "empty";
+    if (i >= 3 && i >= st.hearts && !st.ghost?.[i]) continue;
+    const pop = st.pop?.[i] ?? 1;
+    const s = 4 * pop, off = (32 - 8 * s) / 2;
+    sprite(heartPx(kind), 290 + i * 36 + off, 20 + off, s, st.ghost?.[i] ?? 1);
+  }
+  // Plain numbers on the box; the progress bars live in the app.
+  text(`Happy ${Math.round(st.happy * 100)}%`, 490, 24, { size: 20 });
+  text(st.xpText.replace(/ \/ /, "/"), 630, 24, { size: 20 });
+}
+function slots(states, showLink) {
+  for (let s = 0; s < 4; s++) {
+    const st = states[s];
+    rr(24 + s * 150, 400, 140, 64, 12, st.colour);
+    const label = st.label || `${s + 1}  ${NAMES[s]}`;
+    const two = label.length > 12;
+    if (two) {
+      const [a, ...b] = label.split("  ");
+      text(a, 94 + s * 150, 410, { size: 18, weight: 600, align: "center" });
+      text(b.join(" "), 94 + s * 150, 434, { size: 16, weight: 700, align: "center" });
+    } else text(label, 94 + s * 150, 432, { size: 20, weight: 600, align: "center", base: "middle" });
+  }
+  if (showLink) button(630, 400, 146, 64, "Link phone", "#2f6fb0");
+}
+function dailyRows(mins) {
+  for (let p = 0; p < 4; p++) {
+    const y = 254 + p * 23;
+    text(NAMES[p], 20, y + 3, { size: 14 });
+    text(mins[p] >= 30 ? `${mins[p]}/30 done` : `${mins[p]}/30 min`, 130, y + 3, { size: 14 });
+  }
+}
+function toast(msg, t, colour = C.gold) {
+  if (t <= 0 || t >= 1) return;
+  const a = Math.min(span(t, 0, 0.12), 1 - span(t, 0.85, 1));
+  const y = -170 + 80 * back(span(t, 0, 0.18)); // floats above the box like a notification
+  ctx.globalAlpha = a;
+  ctx.font = "600 20px Montserrat, sans-serif";
+  const w = ctx.measureText(msg).width + 48;
+  rr(400 - w / 2, y, w, 48, 12, "#3a3544", colour);
+  ctx.globalAlpha = 1;
+  text(msg, 400, y + 24, { size: 20, weight: 600, align: "center", base: "middle", alpha: a });
+}
+function runningPanel(o) {
+  rr(340, 84, 440, 300, 16, C.panel);
+  text(o.status, 560, 98, { size: 20, weight: 700, align: "center", color: o.done ? C.green : C.muted });
+  const zoom = o.zoom ?? 1;
+  ctx.save(); ctx.translate(560, 168); ctx.scale(zoom, zoom);
+  text(o.timer, 0, 0, { size: 64, weight: 800, align: "center", base: "middle" });
+  ctx.restore();
+  text(o.challenge, 560, 220, { size: 18, weight: 600, align: "center", color: C.gold, wrap: 400, lh: 24 });
+  button(360, 300, 190, 64, o.left || "Emergency pass", "#b5651d");
+  button(570, 300, 190, 64, o.right || "Stop early", "#5a5560", { press: o.press });
+}
+
+// ---- scenes ----------------------------------------------------------------------
+const frameOf = (t) => Math.floor(t * 2); // the box animates at ~2 frames/s
+
+function sceneIdea(t, T) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // Starfield of tiny pixels for atmosphere.
+  for (let i = 0; i < 60; i++) {
+    const x = (i * 211) % W, y = (i * 137) % H, tw = (Math.sin(T * 2 + i) + 1) / 2;
+    ctx.fillStyle = `rgba(167,161,178,${0.12 + 0.25 * tw})`; ctx.fillRect(x, y, 3, 3);
+  }
+  const a = span(t, 0, 1);
+  text("PHONE-FREE", 640, 92, { font: "Silkscreen", size: 64, weight: 700, align: "center", alpha: a });
+  text("PET BOX", 640, 162, { font: "Silkscreen", size: 64, weight: 700, align: "center", color: C.gold, alpha: a });
+  pet(null, 0, 0, frameOf(T), 640 - 112, 270, 14);
+  // Four phones drift in and go to sleep around the egg.
+  for (let i = 0; i < 4; i++) {
+    const p = back(span(t, 2 + i * 0.5, 3.4 + i * 0.5));
+    const side = i < 2 ? -1 : 1, row = i % 2;
+    const x = 640 + side * (260 + row * 120) * 1 + side * (1 - p) * 500 - 32;
+    const y = 300 + row * 70;
+    phone(x, y, 64, 112, ["#4da6ff", "#ff8fa3", "#7ed957", "#ffc94d"][i], p);
+    if (p > 0.9) text("z", x + 70, y - 10 - ((T * 18 + i * 9) % 26), { font: "Silkscreen", size: 22, color: C.muted, alpha: 0.8 });
+  }
+  text("Put your phones to bed. Grow a pet together.", 640, 560, { size: 26, weight: 600, align: "center", color: C.muted, alpha: span(t, 4.5, 6) });
+}
+
+function sceneDock(t, T) {
+  ctx.fillStyle = "#17141c"; ctx.fillRect(0, 0, W, H);
+  boxFrame();
+  ctx.save(); ctx.translate(SX, SY);
+  const arming = t >= 5.8 && t < 10.8, running = t >= 10.8;
+  header({ title: "Egg  -  gen 1", hearts: 3, happy: 0.6, xp: 0, xpText: "XP 0 / 30" });
+  pet(null, 0, 0, frameOf(T), running ? 82 : 20, running ? 146 : 68, 11);
+  const docked = [0, 1, 2, 3].map((s) => t >= 1.3 + s * 0.9);
+  if (!arming && !running) {
+    dailyRows([0, 0, 0, 0]);
+    rr(340, 84, 440, 300, 16, C.panel);
+    text("Pick an egg", 360, 104, { size: 28, weight: 600 });
+    text("Longer sessions hatch rarer pets.", 360, 146, { size: 14, color: C.muted });
+    // The highlight steps through the sizes, then settles on 30 min.
+    const pick = t < 0.8 ? 0 : t < 1.6 ? 1 : t < 2.4 ? 2 : t < 3.2 ? 3 : 1;
+    const ODDS = [5, 17, 28, 42];
+    ["15 min", "30 min", "60 min", "90 min"].forEach((l, i) => {
+      rr(360 + i * 100, 170, 96, 58, 8, i === pick ? C.teal : "#3a3542");
+      text(l, 408 + i * 100, 199, { size: 18, weight: 600, align: "center", base: "middle" });
+    });
+    text(`${[15, 30, 60, 90][pick]}-min sessions  -  ${ODDS[pick]}% chance of a rare pet`, 360, 236, { size: 14, color: C.gold });
+    button(360, 300, 190, 64, "Start", "#3e9b3a", { press: span(t, 5.2, 5.5) * (1 - span(t, 5.5, 5.8)) });
+    button(570, 300, 190, 64, "Stats", "#5a5560");
+  } else if (arming) {
+    rr(340, 84, 440, 300, 16, C.panel);
+    text("Starting in", 560, 104, { size: 28, weight: 600, align: "center" });
+    const n = Math.max(1, 10 - Math.floor((t - 5.8) * 2));
+    text(String(n), 560, 200, { size: 64, weight: 800, align: "center", base: "middle" });
+    text("Late? Dock your phone now to join.", 560, 250, { size: 14, align: "center", color: C.muted });
+    button(465, 300, 190, 64, "Cancel", "#5a5560");
+  } else {
+    runningPanel({ status: "Goal 30 min", timer: "00:30:00", bar: 0, barColour: C.green, challenge: "Bonus: keep going to 60 min for an extra life" });
+  }
+  slots([0, 1, 2, 3].map((s) => ({ colour: !docked[s] ? C.empty : arming || running ? C.locked : C.docked })), !arming && !running);
+  ctx.restore();
+  // Phones drop into their slots.
+  for (let s = 0; s < 4; s++) {
+    const p = span(t, 0.6 + s * 0.9, 1.3 + s * 0.9);
+    if (p <= 0 || p >= 1) continue;
+    const x = SX + 24 + s * 150 + 40, y = -140 + (SY + 380 + 140) * ease(p);
+    phone(x, y, 60 * (1 - 0.6 * p), 104 * (1 - 0.6 * p), ["#4da6ff", "#ff8fa3", "#7ed957", "#ffc94d"][s], 1 - p * 0.6);
+  }
+}
+
+function sceneGoal(t, T) {
+  ctx.fillStyle = "#17141c"; ctx.fillRect(0, 0, W, H);
+  boxFrame();
+  ctx.save(); ctx.translate(SX, SY);
+  const hatched = t >= 4.5, grown = t >= 9.5;
+  const stage = grown ? 2 : hatched ? 1 : 0;
+  const p = clamp(t / 13.5);
+  const xp = Math.round(p * 180);
+  header({
+    title: hatched ? `Fox ${grown ? "Child" : "Baby"}  -  gen 1` : "Egg  -  gen 1", hearts: 3, happy: 0.6 + 0.1 * p,
+    xp: stage === 0 ? xp / 30 : stage === 1 ? (xp - 30) / 120 : (xp - 150) / 350, xpText: `XP ${xp} / ${stage === 0 ? 30 : stage === 1 ? 150 : 500}`,
+  });
+  // The egg shakes harder just before it hatches.
+  const shake = t > 3.2 && t < 4.5 ? Math.sin(T * 60) * 4 * span(t, 3.2, 4.5) : 0;
+  pet(hatched ? 7 : null, stage, 0, frameOf(T), 82 + shake, 146, 11);
+  if (t > 4.3 && t < 5.1) { ctx.fillStyle = `rgba(255,255,255,${1 - span(t, 4.4, 5.1)})`; ctx.fillRect(60, 120, 220, 240); }
+  runningPanel({
+    status: "Goal 30 min", timer: hms(30 * 60 * (1 - p)), bar: p, barColour: C.green,
+    challenge: "Bonus: keep going to 60 min for an extra life",
+  });
+  slots([0, 1, 2, 3].map(() => ({ colour: C.locked })), false);
+  toast("It hatched! A Rare Fox!", span(t, 4.7, 8.2));
+  toast("Your Fox grew into a Child!", span(t, 9.5, 12.8));
+  ctx.restore();
+}
+
+function sceneChallenge(t, T) {
+  ctx.fillStyle = "#17141c"; ctx.fillRect(0, 0, W, H);
+  boxFrame();
+  ctx.save(); ctx.translate(SX, SY);
+  const p = clamp(t / 10), earned = t >= 10, finished = t >= 12.6;
+  const pop = back(span(t, 10, 10.8));
+  header({ title: "Fox Child  -  gen 1", hearts: earned ? 4 : 3, happy: 0.75, xp: 0.2 + 0.3 * p, xpText: `XP ${180 + Math.round(p * 180)} / 500`, pop: { 3: earned ? pop : 1 } });
+  pet(7, 2, 0, frameOf(T), 82, 146, 11);
+  if (!finished) {
+    const flash = 1 + 0.25 * (1 - span(t, 0, 0.8)) * Math.abs(Math.sin(t * 12));
+    runningPanel({
+      status: "GOAL COMPLETE!", done: true, zoom: earned ? 1 : 1,
+      timer: earned ? "+" + hms(30 * 60 + (t - 10) * 20) : hms(30 * 60 * (1 - p)),
+      bar: 1, barColour: C.green, bonus: earned ? 1 : p, T,
+      challenge: earned ? "BONUS COMPLETE! Extra life earned." : "BONUS ROUND: keep going to 60 min for an EXTRA LIFE!",
+      right: "Finish", press: span(t, 12.1, 12.5),
+    });
+    if (t < 0.8) { ctx.save(); ctx.globalAlpha = 0.35 * (1 - span(t, 0, 0.8)); rr(340, 84, 440, 300, 16, C.green); ctx.restore(); }
+  } else {
+    rr(340, 84, 440, 300, 16, C.panel);
+    text("Well done!", 560, 104, { size: 48, weight: 800, align: "center" });
+    text("Success! 61 min phone-free, +72 bonus XP.", 560, 184, { size: 20, align: "center", wrap: 400, lh: 26 });
+    button(465, 300, 190, 64, "OK", "#2f6fb0");
+  }
+  slots([0, 1, 2, 3].map(() => ({ colour: C.locked })), false);
+  toast("Challenge done: 60 min! Extra life: 4 hearts.", span(t, 10.1, 13.2));
+  ctx.restore();
+  // A gold heart floats up from the pet into the header.
+  if (t > 9.2 && t < 10) {
+    const q = ease(span(t, 9.2, 10));
+    sprite(heartPx("bonus"), SX + 170 + (290 + 3 * 36 - 170) * q, SY + 200 - 180 * q, 4 + 4 * (1 - q));
+  }
+}
+
+function sceneBusted(t, T) {
+  ctx.fillStyle = "#17141c"; ctx.fillRect(0, 0, W, H);
+  boxFrame();
+  ctx.save(); ctx.translate(SX, SY);
+  const lifting = t >= 1.5 && t < 4, result = t >= 4, shame = t >= 8.4;
+  const lost = back(span(t, 4.4, 5.2));
+  header({ title: "Fox Teen  -  gen 1", hearts: result ? 3 : 4, happy: result ? 0.4 : 0.75, xp: 0.1, xpText: "XP 540 / 1500", ghost: result ? { 3: 1 - span(t, 4.4, 5.4) } : null });
+  if (result && t < 5.4) sprite(heartPx("empty"), 290 + 3 * 36, 20 + 60 * lost, 4, 1 - span(t, 4.8, 5.4));
+  if (!shame) {
+    pet(7, 3, result ? MOOD.Crying : 0, frameOf(T), 82, 146, 11);
+    if (!result) {
+      runningPanel({ status: "Goal 30 min", timer: hms(12 * 60 + 20 - t), bar: null, challenge: "Bonus: keep going to 60 min for an extra life" });
+    } else {
+      rr(340, 84, 440, 300, 16, C.panel);
+      const shakeX = t < 5 ? Math.sin(T * 50) * 6 * (1 - span(t, 4, 5)) : 0;
+      text("BUSTED!", 560 + shakeX, 104, { size: 48, weight: 800, align: "center", color: "#ff6b83" });
+      text("Ben picked up their phone after 18 min! Everyone loses.", 560, 184, { size: 20, align: "center", wrap: 400, lh: 26 });
+      button(465, 300, 190, 64, "OK", "#2f6fb0", { press: span(t, 7.8, 8.2) });
+    }
+  } else {
+    pet(7, 3, 2, frameOf(T), 20, 68, 11);
+    dailyRows([32, 18, 41, 30]);
+    rr(340, 84, 440, 300, 16, C.panel);
+    text("Goal: 30 min", 360, 104, { size: 28, weight: 600 });
+    text("Wall of shame: Ben picked up their phone mid-session.", 360, 160, { size: 20, weight: 600, color: "#ff6b83", wrap: 400, lh: 26 });
+    button(360, 300, 190, 64, "Start", "#3e9b3a");
+    button(570, 300, 190, 64, "Stats", "#5a5560");
+  }
+  const blink = Math.floor(T * 4) % 2 === 0;
+  slots([0, 1, 2, 3].map((s) => {
+    if (s !== 1) return { colour: shame ? C.docked : C.locked };
+    if (lifting) return { colour: blink ? C.lift : C.empty, label: "2  PUT IT BACK!" };
+    if (result && !shame) return { colour: C.lift, label: "2  CULPRIT" };
+    return { colour: shame ? C.empty : C.locked };
+  }), shame);
+  ctx.restore();
+  // Ben's phone comes out of slot 2.
+  if (t >= 1.5) {
+    // It slides up out of the slot and away above the box.
+    const q = ease(span(t, 1.5, 2.3));
+    if (q < 1) phone(SX + 24 + 150 + 46, SY + 380 - 520 * q, 48, 84, "#ff8fa3", 1 - q);
+  }
+}
+
+// The companion app on a phone: Pet, Group and History tabs.
+const TABS = [["\u2665", "Pet"], ["\u263A", "Group"], ["\u2605", "Collect"], ["\u21C4", "Friends"], ["\u25A6", "History"], ["\u2699", "Me"]];
+function phoneShell(x, y) {
+  rr(x, y, 360, 660, 46, "#0f0d13", "#3a3544");
+  rr(x + 16, y + 16, 328, 628, 34, "#17141c");
+}
+function tabBar(x, y, on) {
+  rr(x + 16, y + 560, 328, 84, 0, "#120f16");
+  ctx.fillStyle = "#3a3544"; ctx.fillRect(x + 16, y + 560, 328, 2);
+  TABS.forEach(([icon, label], i) => {
+    const cx = x + 16 + 27 + i * 54.6, c = i === on ? "#26c6b5" : C.muted;
+    text(icon, cx, y + 574, { size: 20, align: "center", color: c });
+    text(label, cx, y + 602, { size: 10, align: "center", color: c });
+  });
+}
+function card(x, y, w, h, border) { rr(x, y, w, h, 14, C.panel, border || "#3a3544"); }
+function appPet(x, y, t, T) {
+  const left = Math.max(0, 11 * 60 + 40 - t * 37);
+  rr(x + 34, y + 54, 128, 128, 18, "#34303d", "#3a3544");
+  pet(7, 3, 0, frameOf(T), x + 42, y + 62, 7);
+  for (let i = 0; i < 4; i++) sprite(heartPx(i < 3 ? "full" : "bonus"), x + 176 + i * 28, y + 62, 3);
+  text("Fox teen", x + 176, y + 96, { size: 17, weight: 700 });
+  rr(x + 258, y + 96, 50, 20, 6, null, "#4da6ff");
+  text("RARE", x + 283, y + 99, { size: 11, weight: 700, align: "center", color: "#4da6ff" });
+  text("gen 1 \u00B7 happy", x + 176, y + 122, { size: 12, color: C.muted });
+  text("Happiness", x + 176, y + 142, { size: 10, color: C.muted }); bar(x + 176, y + 156, 140, 8, 0.78, "#ff4d6d");
+  text("XP to Adult", x + 176, y + 168, { size: 10, color: C.muted }); bar(x + 176, y + 182, 140, 8, 0.3, C.gold);
+  card(x + 30, y + 202, 300, 214, "#2f5c58");
+  text("GOAL COMPLETE!", x + 180, y + 218, { size: 18, weight: 800, align: "center", color: C.green });
+  text(`${Math.floor(left / 60)}:${pad2(left % 60)}`, x + 180, y + 244, { size: 44, weight: 800, align: "center", color: "#26c6b5" });
+  text("Finish now, or take on the challenge.", x + 180, y + 300, { size: 15, weight: 700, align: "center" });
+  text("48 min \u00B7 +288 XP \u00B7 goal 30 min", x + 180, y + 326, { size: 12, align: "center", color: C.muted });
+  text("BONUS ROUND: on to 60 min for an extra life!", x + 46, y + 352, { size: 13, weight: 600, color: C.gold });
+  bar(x + 46, y + 376, 268, 10, 1, C.teal);
+  glowBar(x + 46, y + 376, 268, 10, 1 - left / (30 * 60), T);
+  card(x + 30, y + 430, 300, 110);
+  text("MY MINUTES TODAY", x + 46, y + 446, { size: 12, weight: 700, color: C.muted });
+  text("48 / 30", x + 314, y + 444, { size: 14, weight: 700, align: "right", color: "#26c6b5" });
+  bar(x + 46, y + 474, 268, 10, 1, C.teal);
+  text("Day ends in 8:53:29", x + 46, y + 500, { size: 12, color: C.muted });
+  text("3-day streak", x + 314, y + 500, { size: 12, weight: 700, align: "right" });
+}
+function appGroup(x, y, t) {
+  text("The group", x + 34, y + 50, { size: 22, weight: 700 });
+  card(x + 30, y + 92, 300, 214);
+  text("TODAY", x + 46, y + 108, { size: 12, weight: 700, color: C.muted });
+  [["Anna", 48], ["Ben", 18 + Math.floor(t)], ["Cleo", 41], ["Dan", 30]].forEach(([n, m], i) => {
+    const yy = y + 134 + i * 42, met = m >= 30;
+    rr(x + 46, yy + 4, 9, 9, 2, i === 1 ? "#4a4553" : "#26c6b5");
+    text(n, x + 62, yy, { size: 14, weight: 600 });
+    text(`${met ? "\u2713 " : ""}${m} / 30 min`, x + 314, yy, { size: 13, align: "right", color: met ? "#26c6b5" : C.muted });
+    bar(x + 46, yy + 22, 268, 8, m / Math.max(30, m), met ? C.teal : "#5a7f7b");
+  });
+  card(x + 30, y + 320, 300, 84, "#5c2a36");
+  text("WALL OF SHAME", x + 46, y + 336, { size: 12, weight: 700, color: C.muted });
+  text("Empty. Keep it that way.", x + 46, y + 364, { size: 15, color: C.muted });
+  card(x + 30, y + 418, 300, 124);
+  text("TOGETHER SO FAR", x + 46, y + 434, { size: 12, weight: 700, color: C.muted });
+  [["10 h 10 min", "phone-free"], ["9", "sessions won"], ["3", "perfect days"], ["1", "bonus lives"]].forEach(([v, k], i) => {
+    const xx = x + 46 + (i % 2) * 140, yy = y + 460 + Math.floor(i / 2) * 40;
+    text(v, xx, yy, { size: 17, weight: 800 });
+    text(k, xx, yy + 21, { size: 11, color: C.muted });
+  });
+}
+function appHistory(x, y, t) {
+  text("History", x + 34, y + 50, { size: 22, weight: 700 });
+  card(x + 30, y + 92, 300, 330);
+  text("LAST 5 WEEKS", x + 46, y + 108, { size: 12, weight: 700, color: C.muted });
+  "MTWTFSS".split("").forEach((d, i) => text(d, x + 66 + i * 38, y + 134, { size: 11, align: "center", color: C.muted }));
+  const LV = ["#3a3544", "#1f3b39", "#1c5e57", "#009688", "#26c6b5"];
+  for (let i = 0; i < 35; i++) {
+    const c = i % 7, r = Math.floor(i / 7), cx = x + 48 + c * 38, cy = y + 154 + r * 48;
+    const reveal = span(t, i * 0.04, i * 0.04 + 0.3);
+    const lv = i === 34 ? 3 : [4, 3, 4, 2, 3, 1, 4, 3, 0, 4, 4, 3, 2, 4][i % 14];
+    ctx.globalAlpha = reveal;
+    rr(cx, cy, 34, 42, 6, "#1a1720");
+    rr(cx + 4, cy + 22, 26, 6, 2, LV[lv]);
+    rr(cx + 4, cy + 31, 26, 6, 2, LV[Math.max(0, lv - (i % 3))]);
+    text(String(i + 1), cx + 4, cy + 4, { size: 9, color: C.muted, alpha: reveal });
+    if (i === 34) rr(cx, cy, 34, 42, 6, null, C.gold);
+    ctx.globalAlpha = 1;
+  }
+  card(x + 30, y + 436, 300, 104);
+  text("BEST WEEK", x + 46, y + 452, { size: 12, weight: 700, color: C.muted });
+  text("6 of 7 days met by everyone", x + 46, y + 478, { size: 15, weight: 700 });
+  text("Bars are each player's minutes per day", x + 46, y + 504, { size: 12, color: C.muted });
+}
+function sceneApp(t, T) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const tab = t < 6 ? 0 : t < 11 ? 1 : 2;
+  const px = 110 - (1 - back(span(t, 0, 0.8))) * 500, py = 30;
+  phoneShell(px, py);
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(px + 16, py + 16, 328, 544, [34, 34, 0, 0]); ctx.clip();
+  const local = tab === 0 ? t : tab === 1 ? t - 6 : t - 11;
+  const slide = (1 - ease(span(local, 0, 0.4))) * (tab ? 340 : 0);
+  ctx.translate(slide, 0);
+  if (tab === 0) appPet(px, py, t, T);
+  else if (tab === 1) appGroup(px, py, local);
+  else appHistory(px, py, local);
+  ctx.restore();
+  tabBar(px, py, tab === 2 ? 4 : tab);
+
+  // What each tab is for.
+  text("THE COMPANION APP", 560, 64, { font: "Silkscreen", size: 30, weight: 700, alpha: span(t, 0.3, 1) });
+  text("Scan the QR code on the box. There's no app store: the box serves the app to every phone over Wi-Fi.", 560, 116, { size: 18, color: C.muted, wrap: 600, lh: 26, alpha: span(t, 0.6, 1.2) });
+  [
+    ["\u2665", "Pet", "The pet, hearts and the live session timer, with the double-time challenge."],
+    ["\u263A", "Group", "Everyone's minutes today, the wall of shame and lifetime stats together."],
+    ["\u25A6", "History", "A calendar of phone-free days, so you can see the habit build."],
+  ].forEach(([icon, title, body], i) => {
+    const y = 214 + i * 128, on = i === tab, a = span(t, 1 + i * 0.3, 1.6 + i * 0.3);
+    if (a <= 0) return;
+    ctx.globalAlpha = a;
+    rr(560, y, 620, 108, 16, on ? "#1c3a37" : C.panel, on ? "#26c6b5" : "#3a3544");
+    ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.arc(612, y + 54, 26, 0, Math.PI * 2); ctx.fillStyle = on ? "#009688" : "#3a3544"; ctx.globalAlpha = a; ctx.fill(); ctx.globalAlpha = 1;
+    text(icon, 612, y + 54, { size: 24, align: "center", base: "middle", alpha: a });
+    text(title, 656, y + 22, { size: 22, weight: 700, alpha: a });
+    text(body, 656, y + 54, { size: 16, color: on ? "#f4f1e8" : C.muted, wrap: 500, lh: 22, alpha: a });
+  });
+}
+
+// Many phones, each one pinging for attention.
+function feedPhone(x, y, i, T, glow) {
+  const hue = ["#4da6ff", "#ff8fa3", "#7ed957", "#ffc94d", "#b98cff"][i % 5];
+  rr(x, y, 74, 132, 14, "#0f0d13", "#3a3544");
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(x + 6, y + 10, 62, 108, 6); ctx.clip();
+  ctx.fillStyle = "#1a1720"; ctx.fillRect(x + 6, y + 10, 62, 108);
+  // An endless feed scrolling past.
+  const off = (T * (24 + (i % 4) * 9)) % 36;
+  ctx.globalAlpha = glow;
+  for (let k = -1; k < 5; k++) {
+    const yy = y + 12 + k * 36 - off;
+    rr(x + 10, yy, 54, 20, 4, hue);
+    rr(x + 10, yy + 24, 34, 6, 3, "#3a3544");
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+function sceneProblem(t, T) {
+  ctx.fillStyle = "#120f16"; ctx.fillRect(0, 0, W, H);
+  const dim = 1 - 0.75 * span(t, 9.5, 11);
+  for (let i = 0; i < 14; i++) {
+    const row = Math.floor(i / 7), col = i % 7;
+    const a = span(t, 0.2 + i * 0.12, 0.6 + i * 0.12);
+    if (a <= 0) continue;
+    const x = 640 - (7 * 96 - 22) / 2 + col * 96 + (row ? 48 : 0) - 24, y = 300 + row * 150;
+    ctx.globalAlpha = a * dim;
+    feedPhone(x, y, i, T, 1);
+    ctx.globalAlpha = 1;
+    // Notification badges that keep counting up.
+    const n = Math.min(99, Math.floor(Math.max(0, t - 0.8 - i * 0.1) * (2 + (i % 5))));
+    if (n > 0) {
+      const pulse = 1 + 0.15 * Math.max(0, Math.sin(T * 6 + i));
+      ctx.globalAlpha = a * dim;
+      ctx.beginPath(); ctx.arc(x + 70, y + 4, 15 * pulse, 0, Math.PI * 2); ctx.fillStyle = "#ff3b5c"; ctx.fill();
+      ctx.globalAlpha = 1;
+      text(String(n), x + 70, y + 4, { size: 13, weight: 800, align: "center", base: "middle", alpha: a * dim });
+    }
+  }
+  text("WE LIVE IN AN EPIDEMIC", 640, 70, { font: "Silkscreen", size: 50, weight: 700, align: "center", color: "#ff6b83", alpha: span(t, 1.2, 2.2) });
+  text("where attention is being hijacked by", 640, 150, { size: 30, weight: 600, align: "center", alpha: span(t, 2.6, 3.6) });
+  text("phones, social media and screens.", 640, 194, { size: 30, weight: 800, align: "center", alpha: span(t, 3.4, 4.4) });
+  // The turn: what if putting the phone away was the game?
+  const q = span(t, 10.5, 11.5);
+  if (q > 0) {
+    rr(240, 606, 800, 80, 18, "rgba(42,38,50," + q + ")", null);
+    text("What if putting the phone away was the game?", 640, 646, { size: 30, weight: 800, align: "center", base: "middle", color: C.gold, alpha: q });
+  }
+}
+
+// De-emphasized extras: collecting animals and comparing with friends.
+function sceneExtras(t, T) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  text("EXTRAS", 640, 70, { font: "Silkscreen", size: 30, weight: 700, align: "center", color: C.muted, alpha: span(t, 0, 0.6) });
+  text("Every egg is a surprise", 340, 150, { size: 24, weight: 700, align: "center", alpha: span(t, 0.4, 1) });
+  text("13 animals to collect in the app", 340, 186, { size: 16, align: "center", color: C.muted, alpha: span(t, 0.6, 1.2) });
+  P.species.forEach((sp, i) => {
+    const a = span(t, 0.8 + i * 0.15, 1.2 + i * 0.15);
+    const col = i % 5, row = Math.floor(i / 5);
+    pet(i, 2, 0, frameOf(T) + i, 340 - 2.5 * 96 + col * 96 + (row === 2 ? 96 : 0), 236 + row * 100, 5, a);
+  });
+  text("Compare with friends", 940, 150, { size: 24, weight: 700, align: "center", alpha: span(t, 1.6, 2.2) });
+  text("phone-free minutes this week", 940, 186, { size: 16, align: "center", color: C.muted, alpha: span(t, 1.8, 2.4) });
+  [["Maja", 654, 3, 4], ["Noor", 545, 1, 3], ["You", 176, 7, 3]].forEach(([name, min, sp, stage], i) => {
+    const a = span(t, 2.4 + i * 0.4, 3 + i * 0.4);
+    if (a <= 0) return;
+    const y = 236 + i * 92;
+    ctx.globalAlpha = a;
+    rr(760, y, 360, 76, 14, C.panel, name === "You" ? "#26c6b5" : "#3a3544");
+    ctx.globalAlpha = 1;
+    pet(sp, stage, 0, frameOf(T) + i, 776, y + 6, 4, a);
+    text(name, 852, y + 26, { size: 20, weight: 700, alpha: a });
+    text(`${min} min`, 1100, y + 26, { size: 20, weight: 800, align: "right", alpha: a });
+  });
+}
+
+function sceneOutro(t, T) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  text("PUT THE PHONE DOWN.", 640, 150, { font: "Silkscreen", size: 54, weight: 700, align: "center", alpha: span(t, 0, 1) });
+  text("GROW SOMETHING TOGETHER.", 640, 222, { font: "Silkscreen", size: 30, align: "center", color: C.gold, alpha: span(t, 0.8, 1.8) });
+  // Parade of every species walking across.
+  const n = P.species.length;
+  for (let i = 0; i < n; i++) {
+    const x = ((T * 70 + i * 118) % (n * 118)) - 110;
+    const hop = Math.abs(Math.sin(T * 6 + i)) * 10;
+    pet(i, 2 + (i % 4), 0, frameOf(T) + i, x, 380 - hop, 6);
+  }
+  text("Arduino GIGA R1 WiFi  \u00B7  GIGA Display Shield  \u00B7  LVGL 8.3  \u00B7  companion app served by the box", 640, 560, { size: 18, align: "center", color: C.muted, alpha: span(t, 2, 3) });
+  text("4 phones  \u00B7  1 shared pet  \u00B7  more time together", 640, 600, { size: 18, weight: 700, align: "center", alpha: span(t, 2.5, 3.5) });
+}
+
+const RENDER = [sceneProblem, sceneIdea, sceneDock, sceneGoal, sceneChallenge, sceneApp, sceneBusted, sceneExtras, sceneOutro];
+
+// ---- playback ---------------------------------------------------------------------
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let time = 0, playing = !reduce, last = performance.now(), shownScene = -1;
+const playBtn = document.getElementById("play");
+const timeEl = document.getElementById("time");
+const capTitle = document.getElementById("capTitle"), capText = document.getElementById("capText");
+const timeline = document.getElementById("timeline");
+const segs = SCENES.map(([len, title], i) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "seg"; b.style.setProperty("--len", len);
+  b.innerHTML = `<i></i><span>${title}</span>`;
+  b.setAttribute("aria-label", `Jump to ${title}`);
+  b.addEventListener("click", () => { time = STARTS[i] + 0.01; draw(); });
+  timeline.appendChild(b);
+  return b;
+});
+const fmt = (s) => `${Math.floor(s / 60)}:${pad2(s % 60)}`;
+
+function draw() {
+  let i = SCENES.length - 1;
+  while (i > 0 && time < STARTS[i]) i--;
+  const local = time - STARTS[i];
+  ctx.save();
+  RENDER[i](local, time);
+  ctx.restore();
+  // Short fade between scenes.
+  const edge = Math.min(local, SCENES[i][0] - local);
+  if (edge < 0.35) { ctx.fillStyle = `rgba(23,20,28,${1 - edge / 0.35})`; ctx.fillRect(0, 0, W, H); }
+  if (i !== shownScene) { shownScene = i; capTitle.textContent = SCENES[i][1]; capText.textContent = SCENES[i][2]; }
+  segs.forEach((s, k) => {
+    s.classList.toggle("on", k === i);
+    s.style.setProperty("--fill", (k < i ? 100 : k > i ? 0 : (local / SCENES[k][0]) * 100) + "%");
+  });
+  timeEl.textContent = `${fmt(Math.floor(time))} / ${fmt(total)}`;
+}
+
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (playing) {
+    time += dt;
+    if (time >= total) { time = total - 0.001; playing = false; playBtn.textContent = "Replay"; }
+  }
+  draw();
+  requestAnimationFrame(tick);
+}
+playBtn.addEventListener("click", () => {
+  if (time >= total - 0.01) time = 0;
+  playing = !playing;
+  playBtn.textContent = playing ? "Pause" : "Play";
+});
+const fullBtn = document.getElementById("full");
+const player = document.getElementById("player");
+function toggleFull() {
+  if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+  if (!player.requestFullscreen) { fullBtn.textContent = "Not supported here"; return; }
+  player.requestFullscreen().catch(() => { fullBtn.textContent = "Not supported here"; });
+}
+fullBtn.addEventListener("click", toggleFull);
+document.addEventListener("fullscreenchange", () => {
+  fullBtn.textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen";
+  // Going fullscreen is the presentation: play it from the start.
+  if (document.fullscreenElement) { time = 0; playing = true; playBtn.textContent = "Pause"; }
+});
+document.getElementById("restart").addEventListener("click", () => { time = 0; playing = true; playBtn.textContent = "Pause"; });
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && (e.target === document.body || e.target === player)) { e.preventDefault(); playBtn.click(); }
+  if (e.key === "f" || e.key === "F") toggleFull();
+});
+playBtn.textContent = playing ? "Pause" : "Play";
+fitCanvas();
+window.addEventListener("resize", fitCanvas);
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { petCache.clear(); });
+requestAnimationFrame((n) => { last = n; tick(n); });
+</script>
+
+</body>
+</html>

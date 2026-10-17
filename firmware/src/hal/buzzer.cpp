@@ -26,6 +26,7 @@ void on_event(const Event& e) {
     case EventType::Evolved: beep(1760, 400); break;
     case EventType::TargetReached: beep(1568, 500); break;
     case EventType::Hatched: beep(1200, 250); break;
+    case EventType::NewSpecies: beep(2093, 600); break;
     case EventType::SessionEnded: {
       auto kind = static_cast<ResultKind>(e.value);
       if (kind == ResultKind::Broken || kind == ResultKind::Died) beep(180, 900);

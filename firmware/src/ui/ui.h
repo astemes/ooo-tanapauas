@@ -6,6 +6,8 @@ namespace ui {
 
 void begin(petcore::Game& game, bool storage_ok);
 void on_event(const petcore::Event& e);
+// Show a status line immediately (before a blocking step such as Wi-Fi connect).
+void show_status(const char* text);
 // Refresh widgets from game state; call every loop before lv_timer_handler().
 void update(uint32_t now_ms);
 

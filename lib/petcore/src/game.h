@@ -9,7 +9,7 @@
 
 namespace petcore {
 
-enum class State : uint8_t { Idle, Arming, Running, Result };
+enum class State : uint8_t { Setup, Idle, Arming, Running, Result };
 enum class ResultKind : uint8_t { None, Success, Aborted, Broken, Died };
 
 enum class EventType : uint8_t {
@@ -24,6 +24,11 @@ enum class EventType : uint8_t {
   EmergencyExpired,
   SessionEnded,      // value = ResultKind, slot = culprit
   Hatched,           // value = generation
+  DailyMissed,       // slot, value = minutes they managed
+  DayClosed,         // value = mask of players who missed
+  BonusLife,         // value = hearts now
+  SetupDone,
+  NewSpecies,        // value = species, first time the box hatched one
 };
 
 struct Event {
@@ -41,7 +46,12 @@ struct Config {
   uint32_t min_success_minutes = 10;     // shorter "Finish" counts as aborted
   uint32_t result_timeout_ms = 120000;   // result screen auto-dismisses
   uint32_t save_every_minutes = 5;
+  uint32_t free_play_bonus_minutes = 60;  // bonus life without a target (else 2x target)
+  uint32_t max_catchup_days = 7;        // missed days penalised after downtime
 };
+
+// Day number for daily rules: changes at settings.day_reset_hour local time.
+uint32_t day_index(uint32_t unix, const Settings& settings);
 
 class Game {
  public:
@@ -50,6 +60,8 @@ class Game {
   // Load persisted state. A session that was still active means the power
   // was cut mid-session, which counts as a break.
   void begin(const SaveData& loaded, uint32_t now_ms, uint32_t now_unix = 0);
+  // Mix hardware noise into the species roll (optional; tests leave it out).
+  void seed(uint32_t entropy);
   void update(uint32_t now_ms, uint8_t docked_mask, uint32_t now_unix = 0);
 
   // Touchscreen actions. Each returns false if not allowed right now.
@@ -58,7 +70,19 @@ class Game {
   bool request_emergency(uint32_t now_ms);
   bool finish(uint32_t now_ms);
   bool acknowledge();
-  void set_target_minutes(uint16_t minutes) { target_minutes_ = minutes; }
+  // Pick the egg's time setting (one of kEggs, or 0 for free play). Allowed
+  // while Idle until the egg's first session; then it's every session's goal
+  // until the pet is gone.
+  bool choose_egg(uint16_t minutes);
+  // Retire the current pet and start a fresh egg (Idle only). The egg keeps
+  // the previous time setting until a new one is chosen.
+  bool new_pet();
+  // Finish (or redo) setup: player count, daily minimum, day reset, time zone.
+  // Today's progress is kept when redoing setup.
+  bool complete_setup(const Settings& settings);
+  // Change settings without leaving the current Setup/Idle state (app, box menu).
+  bool update_settings(const Settings& settings);
+  bool set_player_name(uint8_t slot, const char* name);
 
   bool poll_event(Event& out);
   // True once after anything worth persisting changed.
@@ -73,7 +97,9 @@ class Game {
   uint8_t docked_mask() const { return docked_; }
   uint8_t armed_mask() const { return armed_; }
   uint8_t lifting_mask() const;  // armed slots currently open (within tolerance)
-  uint16_t target_minutes() const { return target_minutes_; }
+  uint16_t target_minutes() const { return data_.pet.egg_minutes; }
+  // The egg's time setting can no longer change (its first session started).
+  bool egg_locked() const;
   bool target_reached() const { return target_reached_; }
   bool emergency_available() const { return !emergency_used_ && state_ == State::Running; }
   bool emergency_window_open() const { return emergency_window_; }
@@ -85,13 +111,28 @@ class Game {
   uint32_t session_bonus_xp() const { return bonus_xp_; }
   bool finish_counts_as_success() const;
   Mood mood() const;
+  uint8_t num_players() const { return data_.settings.num_players; }
+  // Why the result screen is showing: Lift, PowerCut or MissedDaily.
+  ShameReason result_cause() const { return cause_; }
+  uint8_t last_missed_mask() const { return last_missed_mask_; }
+  bool clock_known() const { return now_unix_ != 0; }
+  uint32_t seconds_until_day_end() const;
+  // The extra-life challenge: keep the session going to double the target
+  // (free play: free_play_bonus_minutes). One bonus life per day.
+  uint32_t bonus_goal_minutes() const;
+  bool bonus_earned() const { return bonus_earned_; }
+  bool bonus_available_today() const;
 
  private:
   void emit(EventType type, uint8_t slot = kNoSlot, uint32_t value = 0);
+  void add_xp(uint32_t xp);
+  uint32_t next_random();
   void award_minutes(uint32_t now_ms);
   void end_session(ResultKind kind, uint8_t culprit, uint32_t now_ms);
   void enter_running(uint32_t now_ms);
-  uint8_t all_slots() const { return static_cast<uint8_t>((1u << cfg_.num_slots) - 1); }
+  void track_day(uint32_t now_ms);
+  void close_day(uint32_t now_ms);
+  uint8_t all_slots() const;
 
   Config cfg_;
   SaveData data_;
@@ -113,7 +154,6 @@ class Game {
   uint32_t minutes_awarded_ = 0;
   uint32_t session_xp_ = 0;
   uint32_t bonus_xp_ = 0;
-  uint16_t target_minutes_ = 0;  // 0 = free play
   bool target_reached_ = false;
   bool emergency_used_ = false;
   bool emergency_window_ = false;
@@ -121,6 +161,10 @@ class Game {
   uint32_t result_at_ = 0;
   uint32_t now_unix_ = 0;
   bool dirty_ = false;
+  ShameReason cause_ = ShameReason::None;
+  uint8_t last_missed_mask_ = 0;
+  bool bonus_earned_ = false;
+  uint32_t rng_ = 0x9E3779B9u;
 
   static constexpr int kQueueSize = 16;
   Event queue_[kQueueSize];

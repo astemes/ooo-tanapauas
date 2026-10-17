@@ -1,0 +1,12 @@
+{
+  "name": "Pet Box",
+  "short_name": "Pet Box",
+  "description": "Keep the pet alive: put your phone in the box.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1E1B24",
+  "theme_color": "#1E1B24",
+  "icons": [{ "src": "/icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" }]
+}

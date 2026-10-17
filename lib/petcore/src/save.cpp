@@ -1,5 +1,8 @@
 #include "save.h"
 
+#include <cstdio>
+#include <cstring>
+
 namespace petcore {
 
 namespace {
@@ -54,6 +57,41 @@ void write_payload(Writer& w, const SaveData& d) {
   w.u8(d.session.active ? 1 : 0);
   w.u8(d.session.armed_mask);
   w.u16(d.session.minutes);
+
+  // ---- v2 ----
+  for (uint16_t v : d.life.missed_days) w.u16(v);
+  for (uint16_t v : d.life.daily_streak) w.u16(v);
+  for (uint16_t v : d.life.best_daily_streak) w.u16(v);
+  w.u16(d.life.perfect_days);
+  w.u16(d.life.bonus_lives);
+  w.u8(d.life.shame.slot);
+  w.u8(static_cast<uint8_t>(d.life.shame.reason));
+  w.u32(d.life.shame.unix);
+
+  const Settings& st = d.settings;
+  w.u8(st.setup_done ? 1 : 0);
+  w.u8(st.num_players);
+  w.u16(st.daily_minimum_min);
+  w.u8(st.day_reset_hour);
+  w.u16(static_cast<uint16_t>(st.tz_offset_min));
+  w.u16(st.pin);
+  for (const auto& name : st.names)
+    for (int i = 0; i < kNameLen; i++) w.u8(static_cast<uint8_t>(name[i]));
+
+  w.u32(d.daily.day);
+  for (uint16_t v : d.daily.minutes) w.u16(v);
+  w.u32(d.daily.bonus_day);
+
+  // ---- v3 ----
+  w.u8(d.pet.species);
+  w.u8(kSpeciesCount);
+  for (int s = 0; s < kSpeciesCount; s++) {
+    w.u8(d.collection.count[s]);
+    w.u8(d.collection.best_stage[s]);
+  }
+
+  // ---- v4 ----
+  w.u16(d.pet.egg_minutes);
 }
 
 void read_payload(Reader& r, SaveData& d) {
@@ -61,7 +99,7 @@ void read_payload(Reader& r, SaveData& d) {
   uint8_t stage = r.u8();
   d.pet.stage = stage < static_cast<uint8_t>(Stage::Count) ? static_cast<Stage>(stage) : Stage::Egg;
   d.pet.hearts = r.u8();
-  if (d.pet.hearts > kMaxHearts) d.pet.hearts = kMaxHearts;
+  if (d.pet.hearts > kMaxBonusHearts) d.pet.hearts = kMaxBonusHearts;
   d.pet.happiness = r.u8();
   if (d.pet.happiness > kMaxHappiness) d.pet.happiness = kMaxHappiness;
   d.pet.generation = r.u16();
@@ -82,7 +120,77 @@ void read_payload(Reader& r, SaveData& d) {
   d.session.minutes = r.u16();
 }
 
+void read_payload_v2(Reader& r, SaveData& d) {
+  for (uint16_t& v : d.life.missed_days) v = r.u16();
+  for (uint16_t& v : d.life.daily_streak) v = r.u16();
+  for (uint16_t& v : d.life.best_daily_streak) v = r.u16();
+  d.life.perfect_days = r.u16();
+  d.life.bonus_lives = r.u16();
+  d.life.shame.slot = r.u8();
+  uint8_t reason = r.u8();
+  d.life.shame.reason = reason <= static_cast<uint8_t>(ShameReason::PowerCut) ? static_cast<ShameReason>(reason)
+                                                                              : ShameReason::None;
+  d.life.shame.unix = r.u32();
+
+  Settings& st = d.settings;
+  st.setup_done = r.u8() != 0;
+  st.num_players = r.u8();
+  st.daily_minimum_min = r.u16();
+  st.day_reset_hour = r.u8();
+  st.tz_offset_min = static_cast<int16_t>(r.u16());
+  st.pin = r.u16();
+  for (auto& name : st.names) {
+    for (int i = 0; i < kNameLen; i++) name[i] = static_cast<char>(r.u8());
+    name[kNameLen] = '\0';
+  }
+
+  d.daily.day = r.u32();
+  for (uint16_t& v : d.daily.minutes) v = r.u16();
+  d.daily.bonus_day = r.u32();
+}
+
+void read_payload_v3(Reader& r, SaveData& d) {
+  d.pet.species = r.u8();
+  if (d.pet.species >= kSpeciesCount) d.pet.species = kNoSpecies;
+  int n = r.u8();  // written by a build that may know more species: skip those
+  for (int s = 0; s < n; s++) {
+    uint8_t count = r.u8(), best = r.u8();
+    if (s >= kSpeciesCount) continue;
+    d.collection.count[s] = count;
+    d.collection.best_stage[s] = best < static_cast<uint8_t>(Stage::Count) ? best : 0;
+  }
+}
+
+// Before species existed every pet was a Blob, including the ones that died.
+void migrate_to_species(SaveData& d) {
+  bool hatched = d.pet.stage != Stage::Egg;
+  d.pet.species = hatched ? 0 : kNoSpecies;
+  uint32_t blobs = d.life.graveyard + (hatched ? 1u : 0u);
+  d.collection.count[0] = static_cast<uint8_t>(blobs > 255 ? 255 : blobs);
+  if (blobs) d.collection.best_stage[0] = static_cast<uint8_t>(hatched ? d.pet.stage : Stage::Baby);
+}
+
 }  // namespace
+
+void settings_sanitize(Settings& s) {
+  if (s.num_players < 1 || s.num_players > kMaxSlots) s.num_players = kMaxSlots;
+  if (s.daily_minimum_min > 600) s.daily_minimum_min = 600;
+  if (s.day_reset_hour > 23) s.day_reset_hour = 4;
+  if (s.tz_offset_min < -720 || s.tz_offset_min > 840) s.tz_offset_min = 0;
+  if (s.pin > 9999) s.pin = 0;
+  for (int i = 0; i < kMaxSlots; i++) {
+    char* name = s.names[i];
+    name[kNameLen] = '\0';
+    for (int c = 0; name[c]; c++)
+      if (static_cast<unsigned char>(name[c]) < 0x20 || name[c] == '"' || name[c] == '\\') name[c] = '_';
+    if (name[0] == '\0') std::snprintf(name, kNameLen + 1, "Player %d", i + 1);
+  }
+}
+
+const char* player_name(const Settings& s, uint8_t slot) {
+  if (slot >= kMaxSlots) return "Someone";
+  return s.names[slot][0] ? s.names[slot] : "Player";
+}
 
 uint32_t crc32(const uint8_t* data, size_t len) {
   uint32_t crc = 0xFFFFFFFFu;
@@ -112,7 +220,8 @@ bool save_decode(const uint8_t* buf, size_t len, SaveData& out) {
   for (int i = 0; i < 4; i++)
     if (buf[i] != kMagic[i]) return false;
   Reader header{buf, len, 4};
-  if (header.u16() != kSaveVersion) return false;
+  uint16_t version = header.u16();
+  if (version < 1 || version > kSaveVersion) return false;
   size_t payload = header.u16();
   size_t total = kHeaderSize + payload + 4;
   if (total > len) return false;
@@ -122,7 +231,15 @@ bool save_decode(const uint8_t* buf, size_t len, SaveData& out) {
   SaveData d;
   Reader r{buf, kHeaderSize + payload, kHeaderSize};
   read_payload(r, d);
+  if (version >= 2) read_payload_v2(r, d);
+  if (version >= 3) read_payload_v3(r, d);
+  if (version >= 4) {
+    d.pet.egg_minutes = r.u16();
+    if (d.pet.egg_minutes != 0 && !is_egg_minutes(d.pet.egg_minutes)) d.pet.egg_minutes = kDefaultEggMinutes;
+  }
+  else migrate_to_species(d);
   if (!r.ok) return false;
+  settings_sanitize(d.settings);
   out = d;
   return true;
 }

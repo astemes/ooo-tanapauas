@@ -1,5 +1,7 @@
 #include "sprites.h"
 
+#include "species.h"
+
 #include <cstring>
 
 namespace petcore {
@@ -50,9 +52,10 @@ Art kBaby = {
 
 Art kChild = {
     "................",
-    "...##......##...",
-    "..#oo#....#oo#..",
-    "..#oo######oo#..",
+    "................",
+    "................",
+    ".....######.....",
+    "...##oooooo##...",
     "..#oooooooooo#..",
     ".#oooooooooooo#.",
     ".#oooooooooooo#.",
@@ -64,13 +67,13 @@ Art kChild = {
     "...#oo####oo#...",
     "...#ss#..#ss#...",
     "....##....##....",
-    "................",
 };
 
 Art kTeen = {
-    ".......##.......",
-    "......#aa#......",
-    "....###aa###....",
+    "................",
+    "................",
+    "................",
+    "....########....",
     "...#oooooooo#...",
     "..#oooooooooo#..",
     "..#oooooooooo#..",
@@ -83,10 +86,11 @@ Art kTeen = {
     "...#oo#..#oo#...",
     "...#ss#..#ss#...",
     "....##....##....",
-    "................",
 };
 
 Art kAdult = {
+    "................",
+    "................",
     "................",
     ".....######.....",
     "...##oooooo##...",
@@ -97,17 +101,17 @@ Art kAdult = {
     ".#oooooooooooo#.",
     "#oooowwwwwwoooo#",
     "#ooowwwwwwwwooo#",
-    "#ooowwwwwwwwooo#",
     ".#soowwwwwwoos#.",
     "..#ssssssssss#..",
     "..#oo#....#oo#..",
     "..####....####..",
-    "................",
 };
 
 Art kElder = {
-    ".....aaaaaa.....",
-    "....a######a....",
+    "................",
+    "................",
+    "................",
+    ".....######.....",
     "...##oooooo##...",
     "..#oooooooooo#..",
     ".#oooooooooooo#.",
@@ -115,13 +119,11 @@ Art kElder = {
     ".#oooooooooooo#.",
     ".#owwwwwwwwwwo#.",
     "#oowwwwwwwwwwoo#",
-    "#ooowwwwwwwwooo#",
     "#oooowwwwwwoooo#",
     ".#sooowwwwooos#.",
     "..#ssssssssss#..",
     "..#oo#....#oo#..",
     "..####....####..",
-    "................",
 };
 
 Art kTombstone = {
@@ -143,6 +145,129 @@ Art kTombstone = {
     "................",
 };
 
+// Species head features, 16x7, drawn behind the body: rows 0-2 stick out
+// above the head, the rest tuck in behind it (only the parts beside the
+// head show). Placed kFeatureY rows from the top per stage.
+constexpr int kFeatureH = 7;
+using Feature = const char* const[kFeatureH];
+
+Feature kFeatureChick = {
+    "......#..#......",
+    ".....#a##a#.....",
+    "......#aa#......",
+    "......#aa#......",
+    "................",
+    "................",
+    "................",
+};
+Feature kFeatureBunny = {
+    "...##......##...",
+    "..#oa#....#ao#..",
+    "..#oa#....#ao#..",
+    "..#oa#....#ao#..",
+    "...#o#....#o#...",
+    "................",
+    "................",
+};
+Feature kFeatureFrog = {
+    "................",
+    "...###....###...",
+    "..#oao#..#oao#..",
+    "..#ooo#..#ooo#..",
+    "..#oooo##oooo#..",
+    "................",
+    "................",
+};
+Feature kFeatureCat = {
+    "................",
+    "...#........#...",
+    "..#a#......#a#..",
+    "..#aa#....#aa#..",
+    "..#ooo#..#ooo#..",
+    "................",
+    "................",
+};
+Feature kFeatureBear = {
+    "................",
+    "................",
+    "...###....###...",
+    "..#oaa#..#aao#..",
+    "..#oo#....#oo#..",
+    "................",
+    "................",
+};
+Feature kFeaturePig = {
+    "................",
+    "................",
+    "................",
+    "..##........##..",
+    ".#aa#......#aa#.",
+    ".#a#........#a#.",
+    "................",
+};
+Feature kFeatureFox = {
+    "..#..........#..",
+    "..#o#......#o#..",
+    "..#ao#....#oa#..",
+    "..#aao#..#oaa#..",
+    "..#ooo#..#ooo#..",
+    "................",
+    "................",
+};
+Feature kFeaturePanda = {
+    "................",
+    "................",
+    "...###....###...",
+    "..#aaa#..#aaa#..",
+    "..#aa#....#aa#..",
+    "................",
+    "................",
+};
+Feature kFeatureAxolotl = {
+    "................",
+    "................",
+    "a.a..........a.a",
+    ".aa#........#aa.",
+    "aaa#........#aaa",
+    ".a#..........#a.",
+    "................",
+};
+Feature kFeatureDeer = {
+    "..a.a......a.a..",
+    "..aaa......aaa..",
+    "...a........a...",
+    "....aa....aa....",
+    "................",
+    "................",
+    "................",
+};
+Feature kFeatureDragon = {
+    "..#..........#..",
+    "..#a#......#a#..",
+    "...#a#....#a#...",
+    "....#a#..#a#....",
+    "................",
+    "................",
+    "................",
+};
+Feature kFeatureUnicorn = {
+    "........#.......",
+    ".......#a#......",
+    "..#...#aa#...#..",
+    "..#o#.#aa#.#o#..",
+    "..#oo#....#oo#..",
+    "................",
+    "................",
+};
+
+// Indexed by species (species.cpp); Blob has no feature.
+const char* const* const kSpeciesFeature[] = {
+    nullptr,         kFeatureChick, kFeatureBunny,   kFeatureFrog, kFeatureCat,    kFeatureBear,    kFeaturePig,
+    kFeatureFox,     kFeaturePanda, kFeatureAxolotl, kFeatureDeer, kFeatureDragon, kFeatureUnicorn,
+};
+static_assert(sizeof(kSpeciesFeature) / sizeof(kSpeciesFeature[0]) == kSpeciesCount, "one feature per species");
+constexpr int kFeatureY[] = {0, 2, 0, 0, 0, 0};
+
 constexpr int kFaceW = 8;
 constexpr int kFaceH = 4;
 using Face = const char* const[kFaceH];
@@ -157,7 +282,7 @@ struct FaceAnchor {
   int x, y;
 };
 // Top-left of the 8x4 face per stage (Egg has no face).
-constexpr FaceAnchor kFaceAt[] = {{0, 0}, {4, 8}, {4, 5}, {4, 4}, {4, 4}, {4, 4}};
+constexpr FaceAnchor kFaceAt[] = {{0, 0}, {4, 8}, {4, 6}, {4, 5}, {4, 6}, {4, 6}};
 
 const char* const* body_for(Stage s) {
   switch (s) {
@@ -203,7 +328,7 @@ uint32_t darken(uint32_t rgb) {
 
 }  // namespace
 
-void render_pet(Stage stage, Mood mood, uint32_t frame, Sprite out) {
+void render_pet(uint8_t species, Stage stage, Mood mood, uint32_t frame, Sprite out) {
   std::memset(out, kTransparent, sizeof(Sprite));
 
   if (mood == Mood::Dead) {
@@ -221,7 +346,9 @@ void render_pet(Stage stage, Mood mood, uint32_t frame, Sprite out) {
   // Happy pets bounce; sad and crying ones droop slowly.
   int bob = (mood == Mood::Happy || mood == Mood::Content) ? static_cast<int>(frame % 2)
                                                            : (frame % 4 == 0 ? 1 : 0);
-  blit(body_for(stage), kSpriteSize, kSpriteSize, 0, bob, false, out);
+  const char* const* feature = species < kSpeciesCount ? kSpeciesFeature[species] : nullptr;
+  if (feature) blit(feature, kSpriteSize, kFeatureH, 0, kFeatureY[static_cast<int>(stage)] + bob, true, out);
+  blit(body_for(stage), kSpriteSize, kSpriteSize, 0, bob, true, out);
 
   const char* const* face = mood == Mood::Happy     ? kFaceHappy
                             : mood == Mood::Content ? kFaceContent
@@ -246,7 +373,7 @@ void render_heart(bool full, HeartSprite out) {
     }
 }
 
-uint32_t palette_rgb(Stage stage, uint8_t index) {
+uint32_t palette_rgb(uint8_t species, Stage stage, uint8_t index) {
   static const uint32_t kBodyColour[] = {
       0xF4F1E8,  // Egg (body unused)
       0xFFD84D,  // Baby: yellow
@@ -255,7 +382,8 @@ uint32_t palette_rgb(Stage stage, uint8_t index) {
       0xFF9A3C,  // Adult: orange
       0xB98CFF,  // Elder: purple
   };
-  uint32_t body = kBodyColour[static_cast<int>(stage) % 6];
+  const SpeciesInfo& sp = species_info(species);
+  uint32_t body = sp.body ? sp.body : kBodyColour[static_cast<int>(stage) % 6];
   switch (index) {
     case kOutline: return 0x2B2233;
     case kBody: return body;
@@ -263,7 +391,7 @@ uint32_t palette_rgb(Stage stage, uint8_t index) {
     case kWhite: return 0xF7F4EE;
     case kCheek: return 0xFF8FA3;
     case kTear: return 0x5BC0FF;
-    case kAccent: return stage == Stage::Egg ? 0x8FD3C8 : 0xFFE066;
+    case kAccent: return stage == Stage::Egg ? 0x8FD3C8 : sp.accent;
     case kHeartFull: return 0xFF4D6D;
     case kHeartEmpty: return 0x5A5560;
     default: return 0x000000;
